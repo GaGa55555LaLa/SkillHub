@@ -1,0 +1,67 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { getViewer } from "@/lib/viewer";
+import { getAppSlug } from "@/lib/github";
+
+export default async function MyReposPage() {
+  const viewer = await getViewer();
+  if (!viewer) redirect("/");
+
+  const [sources, appSlug] = await Promise.all([
+    prisma.skillSource.findMany({
+      where: { ownerType: "user", ownerUserId: viewer.userId },
+      include: { skills: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    getAppSlug(),
+  ]);
+
+  const installUrl = `https://github.com/apps/${appSlug}/installations/new`;
+
+  return (
+    <main className="mx-auto w-full max-w-3xl p-8">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">我的 repo</h1>
+        <a
+          href={installUrl}
+          className="rounded-lg bg-black px-4 py-2 text-sm text-white hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200"
+        >
+          連結我的 repo
+        </a>
+      </div>
+
+      <p className="mb-6 text-sm text-gray-500">
+        連結後預設不會分享給任何人，需要進到各 repo 的設定頁挑選要曝光哪些
+        skill、要分享給誰。
+      </p>
+
+      {sources.length === 0 ? (
+        <p className="text-gray-500">還沒有連結任何個人 repo。</p>
+      ) : (
+        <ul className="space-y-3">
+          {sources.map((source) => (
+            <li key={source.id}>
+              <Link
+                href={`/settings/repos/${source.id}`}
+                className="block rounded-lg border border-gray-200 p-4 hover:border-gray-400 dark:border-gray-800 dark:hover:border-gray-600"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{source.repoFullName}</span>
+                  <span className="text-xs text-gray-400">
+                    {source.visibility === "private" ? "私有" : "公開"}・
+                    {source.shareMode === "whole_repo" ? "整包分享" : "逐一挑選"}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-gray-500">
+                  {source.skills.length} 個 skill・
+                  {source.skills.filter((s) => s.isPublished).length} 個已發布
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}

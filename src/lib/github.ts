@@ -21,6 +21,22 @@ export async function getInstallationClient(
   return getApp().getInstallationOctokit(Number(installationId));
 }
 
+/** App 安裝在 org 上的 installation client，供 org members/teams 查詢使用。 */
+export async function getOrgClient(): Promise<Octokit> {
+  return getInstallationClient(BigInt(process.env.GITHUB_ORG_INSTALLATION_ID!));
+}
+
+let appSlug: string | undefined;
+
+/** App 的公開頁 slug（用來組出 installation URL），透過 App 自身身份查詢並快取。 */
+export async function getAppSlug(): Promise<string> {
+  if (appSlug) return appSlug;
+  const res = await getApp().octokit.request("GET /app");
+  if (!res.data?.slug) throw new Error("GitHub App slug not found");
+  appSlug = res.data.slug;
+  return appSlug;
+}
+
 /** App 在某個 installation 底下可見的所有 repo（org 安裝時即所有 org repo）。 */
 export async function listInstallationRepos(installationId: number | bigint) {
   const octokit = await getInstallationClient(installationId);
@@ -135,6 +151,15 @@ export async function listOrgTeams(octokit: Octokit, org: string) {
     per_page: 100,
   });
   return res.data.map((t) => ({ id: t.id, slug: t.slug, name: t.name }));
+}
+
+/** Org 成員清單，供分享對象選單使用。 */
+export async function listOrgMembers(octokit: Octokit, org: string) {
+  const res = await octokit.request("GET /orgs/{org}/members", {
+    org,
+    per_page: 100,
+  });
+  return res.data.map((m) => ({ id: m.id, login: m.login! }));
 }
 
 export async function listUserTeamIds(

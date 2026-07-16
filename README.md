@@ -10,6 +10,8 @@
   - GitHub App 掃描 repo 內 `SKILL.md` 資料夾（`src/lib/github.ts`、`src/lib/sync.ts`）
   - 可見性判斷邏輯（`src/lib/visibility.ts`，DESIGN.md §6.1）
   - REST API：`/api/v1/skills/search`、`/api/v1/skills/:id`、`/api/v1/skills/:id/download`
+  - 個人 repo 連結（`/settings/repos`、`/api/github/setup`）+ 分享對象設定
+    （`/settings/repos/[id]`，`src/lib/actions/repos.ts`）
 - **MCP server**（`mcp-server/`）：Streamable HTTP remote MCP，
   提供 `search_skills` / `get_skill_details` / `download_skill` 三個工具，
   內部轉呼叫主站 REST API。
@@ -25,6 +27,8 @@
    需要事先建立：
    - **GitHub OAuth App**（登入用）→ `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`
    - **GitHub App**（讀 repo 用，安裝到 org）→ `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_ORG_INSTALLATION_ID`
+     - 要在 GitHub App 設定頁的 **Setup URL** 填 `<host>/api/github/setup`
+       （個人 repo 連結流程用，開發環境填 `http://localhost:3000/api/github/setup`）
    - Postgres（本地可用 `npx prisma dev`，或 Neon / Supabase 免費額度）
 
 2. 建立資料庫 schema：
@@ -56,9 +60,9 @@ claude mcp add --transport http skillhub http://localhost:3001/mcp \
 
 ## 尚未實作（MVP 待辦）
 
-- [ ] 個人 repo 連結流程（GitHub App installation callback）
-- [ ] 分享對象設定 UI（個人 / team）
-- [ ] `selected_only` 模式的 skill 勾選 UI
+- [x] 個人 repo 連結流程（GitHub App installation callback）
+- [x] 分享對象設定 UI（個人 / team）
+- [x] `selected_only` 模式的 skill 勾選 UI
 - [ ] API token 產生/撤銷 UI
 - [ ] SKILL.md 的 markdown 渲染（目前為原文顯示）
 - [ ] 排程 sync（Vercel Cron / GitHub Actions schedule 呼叫 `/api/admin/sync`）

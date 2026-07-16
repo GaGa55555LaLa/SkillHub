@@ -35,7 +35,12 @@ export default async function DashboardPage({
     <main className="mx-auto w-full max-w-4xl p-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Skills</h1>
-        <span className="text-sm text-gray-500">@{viewer.githubLogin}</span>
+        <div className="flex items-center gap-4 text-sm">
+          <Link href="/settings/repos" className="text-blue-600 hover:underline">
+            我的 repo
+          </Link>
+          <span className="text-gray-500">@{viewer.githubLogin}</span>
+        </div>
       </div>
 
       <form className="mb-6">
