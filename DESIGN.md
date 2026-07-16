@@ -216,8 +216,12 @@ get_skill_details(id: string)
   -> { name, description, skill_md_content, file_list }
 
 download_skill(id: string)
-  -> { files: [{ path, content }] }
-     // 直接回傳檔案內容陣列而非 zip，方便 agent 直接寫入本地 .claude/skills/<name>/
+  -> { name, owner, suggested_dir_name, files: [{ path, content }] }
+     // 直接回傳檔案內容陣列而非 zip，方便 agent 直接寫入本地
+     // .claude/skills/<suggested_dir_name>/。name 只是 SKILL.md
+     // frontmatter 解析出來的顯示字串，不保證唯一（不同人 fork 同一個
+     // 公開範本很容易撞名），寫入本地資料夾要用 suggested_dir_name
+     // （owner-name slug）而非 name，避免互相覆蓋。
 ```
 
 **認證**：使用者在平台「設定」頁生成個人 API Token（對應 `api_tokens` 表），設定到 Claude Code：

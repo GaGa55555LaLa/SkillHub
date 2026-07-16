@@ -65,7 +65,10 @@ function buildServer(bearerToken: string): McpServer {
     "download_skill",
     {
       description:
-        "下載 skill 的所有檔案內容（path 為相對路徑），可直接寫入本地 .claude/skills/<name>/。",
+        "下載 skill 的所有檔案內容（path 為相對路徑）。寫入本地時請用回傳的 " +
+        "suggested_dir_name 當資料夾名稱（.claude/skills/<suggested_dir_name>/），" +
+        "不要用 name —— name 只是顯示用字串，不同來源的 skill 可能同名，" +
+        "直接拿來當資料夾會互相覆蓋。",
       inputSchema: { id: z.string().describe("skill id") },
     },
     async ({ id }) => {

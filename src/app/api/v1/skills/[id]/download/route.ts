@@ -3,11 +3,17 @@ import { prisma } from "@/lib/prisma";
 import { resolveApiViewer } from "@/lib/api-auth";
 import { canViewSkill } from "@/lib/visibility";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { slugify } from "@/lib/slug";
 
 /**
  * GET /api/v1/skills/:id/download — DESIGN.md §9 download_skill
- * 直接回傳檔案內容陣列（非 zip），方便 agent 寫入本地 .claude/skills/<name>/。
+ * 直接回傳檔案內容陣列（非 zip），方便 agent 寫入本地 .claude/skills/<dir>/。
  * 路徑會轉成相對於 skill 資料夾的相對路徑。
+ *
+ * `name` 只是從 SKILL.md frontmatter 解析出來的顯示字串，不保證唯一
+ * ——不同人各自 fork 同一個公開範本很容易撞名。所以另外給一個
+ * `suggested_dir_name`（owner-name slug）給呼叫端當本地資料夾名稱，
+ * 避免不同來源、同名的 skill 互相覆蓋。
  */
 export async function GET(
   req: NextRequest,
@@ -29,16 +35,22 @@ export async function GET(
 
   const skill = await prisma.skill.findUniqueOrThrow({
     where: { id },
-    include: { contentCache: true },
+    include: { contentCache: true, source: { include: { owner: true } } },
   });
 
   await prisma.accessAuditLog.create({
     data: { actorUserId: viewer.userId, skillId: skill.id, action: "download" },
   });
 
+  const owner =
+    skill.source.owner?.githubLogin ?? skill.source.repoFullName.split("/")[0];
+  const suggestedDirName = `${slugify(owner)}-${slugify(skill.name)}`;
+
   const prefix = skill.path === "" ? "" : `${skill.path}/`;
   return NextResponse.json({
     name: skill.name,
+    owner,
+    suggested_dir_name: suggestedDirName,
     files: skill.contentCache.map((f) => ({
       path: f.filePath.startsWith(prefix)
         ? f.filePath.slice(prefix.length)
