@@ -64,7 +64,7 @@ claude mcp add --transport http skillhub http://localhost:3001/mcp \
 - [x] 分享對象設定 UI（個人 / team）
 - [x] `selected_only` 模式的 skill 勾選 UI
 - [x] API token 產生/撤銷 UI（`/settings/tokens`）
-- [ ] SKILL.md 的 markdown 渲染（目前為原文顯示）
+- [x] SKILL.md 的 markdown 渲染（`react-markdown` + `remark-gfm` + `@tailwindcss/typography`）
 - [ ] 排程 sync（Vercel Cron / GitHub Actions schedule 呼叫 `/api/admin/sync`）
 - [ ] 可見性邏輯的自動化測試（DESIGN.md §8）
 - [ ] Rate limit

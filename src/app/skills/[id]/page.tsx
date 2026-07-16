@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import matter from "gray-matter";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/viewer";
 import { canViewSkill } from "@/lib/visibility";
@@ -75,10 +78,12 @@ export default async function SkillDetailPage({
       {skillMd && (
         <section className="mt-8">
           <h2 className="mb-2 text-lg font-semibold">SKILL.md</h2>
-          {/* TODO: 換成 markdown 渲染（react-markdown），先以原文顯示 */}
-          <pre className="overflow-x-auto rounded-lg border border-gray-200 p-4 text-sm whitespace-pre-wrap dark:border-gray-800">
-            {skillMd.fileContent}
-          </pre>
+          {/* frontmatter（name/description）已經顯示在頁首，內文只渲染 body 避免重複 */}
+          <div className="prose prose-sm max-w-none rounded-lg border border-gray-200 p-4 dark:prose-invert dark:border-gray-800">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {matter(skillMd.fileContent).content}
+            </ReactMarkdown>
+          </div>
         </section>
       )}
 
