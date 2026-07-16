@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BUTTON_LINK_CLASS } from "@/lib/ui";
 
 export function AppHeader({ githubLogin }: { githubLogin: string }) {
   return (
@@ -7,10 +8,10 @@ export function AppHeader({ githubLogin }: { githubLogin: string }) {
         SkillHub
       </Link>
       <div className="flex items-center gap-4 text-sm">
-        <Link href="/settings/repos" className="text-blue-600 hover:underline">
+        <Link href="/settings/repos" className={BUTTON_LINK_CLASS}>
           我的 repo
         </Link>
-        <Link href="/settings/tokens" className="text-blue-600 hover:underline">
+        <Link href="/settings/tokens" className={BUTTON_LINK_CLASS}>
           API Tokens
         </Link>
         <span className="text-gray-500">@{githubLogin}</span>

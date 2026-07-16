@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/viewer";
 import { canViewSkill } from "@/lib/visibility";
 import { AppHeader } from "@/components/AppHeader";
+import { BUTTON_LINK_CLASS } from "@/lib/ui";
 
 export default async function SkillDetailPage({
   params,
@@ -61,7 +62,7 @@ export default async function SkillDetailPage({
             href={githubUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
+            className={BUTTON_LINK_CLASS}
           >
             在 GitHub 上查看
           </a>
@@ -70,10 +71,7 @@ export default async function SkillDetailPage({
             原始 repo 為私有，此內容由擁有者透過本平台分享
           </span>
         )}
-        <a
-          href={`/api/v1/skills/${skill.id}/download`}
-          className="text-blue-600 hover:underline"
-        >
+        <a href={`/api/v1/skills/${skill.id}/download`} className={BUTTON_LINK_CLASS}>
           下載 skill
         </a>
       </div>

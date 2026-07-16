@@ -10,6 +10,7 @@ import {
   resyncSource,
 } from "@/lib/actions/repos";
 import { AppHeader } from "@/components/AppHeader";
+import { BUTTON_LINK_CLASS } from "@/lib/ui";
 
 export default async function RepoSettingsPage({
   params,
@@ -53,10 +54,7 @@ export default async function RepoSettingsPage({
       <div className="mb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{source.repoFullName}</h1>
         <form action={resyncSource.bind(null, source.id)}>
-          <button
-            type="submit"
-            className="text-sm text-blue-600 hover:underline"
-          >
+          <button type="submit" className={BUTTON_LINK_CLASS}>
             重新掃描
           </button>
         </form>
