@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/viewer";
 import { canViewSkill } from "@/lib/visibility";
+import { AppHeader } from "@/components/AppHeader";
 
 export default async function SkillDetailPage({
   params,
@@ -42,6 +43,8 @@ export default async function SkillDetailPage({
 
   return (
     <main className="mx-auto w-full max-w-4xl p-8">
+      <AppHeader githubLogin={viewer.githubLogin} />
+
       <Link href="/dashboard" className="text-sm text-gray-500 hover:underline">
         ← 回列表
       </Link>

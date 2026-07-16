@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/viewer";
 import { getAppSlug } from "@/lib/github";
+import { AppHeader } from "@/components/AppHeader";
 
 export default async function MyReposPage() {
   const viewer = await getViewer();
@@ -21,6 +22,8 @@ export default async function MyReposPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl p-8">
+      <AppHeader githubLogin={viewer.githubLogin} />
+
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">我的 repo</h1>
         <a

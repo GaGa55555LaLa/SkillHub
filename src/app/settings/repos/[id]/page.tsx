@@ -9,6 +9,7 @@ import {
   removeShare,
   resyncSource,
 } from "@/lib/actions/repos";
+import { AppHeader } from "@/components/AppHeader";
 
 export default async function RepoSettingsPage({
   params,
@@ -47,6 +48,8 @@ export default async function RepoSettingsPage({
 
   return (
     <main className="mx-auto w-full max-w-3xl p-8">
+      <AppHeader githubLogin={viewer.githubLogin} />
+
       <div className="mb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{source.repoFullName}</h1>
         <form action={resyncSource.bind(null, source.id)}>
