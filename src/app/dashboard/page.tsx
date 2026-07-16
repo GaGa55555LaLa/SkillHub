@@ -39,6 +39,9 @@ export default async function DashboardPage({
           <Link href="/settings/repos" className="text-blue-600 hover:underline">
             我的 repo
           </Link>
+          <Link href="/settings/tokens" className="text-blue-600 hover:underline">
+            API Tokens
+          </Link>
           <span className="text-gray-500">@{viewer.githubLogin}</span>
         </div>
       </div>

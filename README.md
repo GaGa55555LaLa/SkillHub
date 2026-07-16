@@ -51,7 +51,7 @@
 
 ## Claude Code 串接
 
-在平台上產生 API token 後（尚未實作 UI，暫時可直接呼叫 `createApiToken()`）：
+在平台的 `/settings/tokens` 頁面產生 API token 後：
 
 ```bash
 claude mcp add --transport http skillhub http://localhost:3001/mcp \
@@ -63,7 +63,7 @@ claude mcp add --transport http skillhub http://localhost:3001/mcp \
 - [x] 個人 repo 連結流程（GitHub App installation callback）
 - [x] 分享對象設定 UI（個人 / team）
 - [x] `selected_only` 模式的 skill 勾選 UI
-- [ ] API token 產生/撤銷 UI
+- [x] API token 產生/撤銷 UI（`/settings/tokens`）
 - [ ] SKILL.md 的 markdown 渲染（目前為原文顯示）
 - [ ] 排程 sync（Vercel Cron / GitHub Actions schedule 呼叫 `/api/admin/sync`）
 - [ ] 可見性邏輯的自動化測試（DESIGN.md §8）
