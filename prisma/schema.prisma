@@ -1,0 +1,143 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OwnerType {
+  org
+  user
+}
+
+enum ShareMode {
+  whole_repo
+  selected_only
+}
+
+enum RepoVisibility {
+  public
+  private
+}
+
+enum GranteeType {
+  user
+  team
+}
+
+enum AuditAction {
+  view
+  download
+}
+
+model User {
+  id              String   @id @default(cuid())
+  githubId        BigInt   @unique @map("github_id")
+  githubLogin     String   @unique @map("github_login")
+  githubAvatarUrl String?  @map("github_avatar_url")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  ownedSources  SkillSource[]    @relation("SourceOwner")
+  apiTokens     ApiToken[]
+  auditLogs     AccessAuditLog[]
+  grantedShares SkillShare[]     @relation("ShareGrantedBy")
+
+  @@map("users")
+}
+
+model SkillSource {
+  id             String         @id @default(cuid())
+  repoFullName   String         @unique @map("repo_full_name")
+  ownerType      OwnerType      @map("owner_type")
+  ownerUserId    String?        @map("owner_user_id")
+  installationId BigInt         @map("installation_id")
+  shareMode      ShareMode      @default(whole_repo) @map("share_mode")
+  visibility     RepoVisibility @default(private)
+  lastSyncedAt   DateTime?      @map("last_synced_at")
+  lastCommitSha  String?        @map("last_commit_sha")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  owner  User?        @relation("SourceOwner", fields: [ownerUserId], references: [id])
+  skills Skill[]
+  shares SkillShare[]
+
+  @@map("skill_sources")
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  sourceId    String   @map("source_id")
+  path        String
+  name        String
+  description String?
+  contentSha  String?  @map("content_sha")
+  isPublished Boolean  @default(true) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  source       SkillSource         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  contentCache SkillContentCache[]
+  shares       SkillShare[]
+  auditLogs    AccessAuditLog[]
+
+  @@unique([sourceId, path])
+  @@map("skills")
+}
+
+model SkillContentCache {
+  id          String   @id @default(cuid())
+  skillId     String   @map("skill_id")
+  filePath    String   @map("file_path")
+  fileContent String   @map("file_content")
+  cachedAt    DateTime @default(now()) @map("cached_at")
+
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([skillId, filePath])
+  @@map("skill_content_cache")
+}
+
+model SkillShare {
+  id          String      @id @default(cuid())
+  skillId     String?     @map("skill_id")
+  sourceId    String      @map("source_id")
+  granteeType GranteeType @map("grantee_type")
+  granteeId   BigInt      @map("grantee_id")
+  grantedById String      @map("granted_by")
+  grantedAt   DateTime    @default(now()) @map("granted_at")
+
+  skill     Skill?      @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  source    SkillSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  grantedBy User        @relation("ShareGrantedBy", fields: [grantedById], references: [id])
+
+  @@unique([sourceId, skillId, granteeType, granteeId])
+  @@map("skill_shares")
+}
+
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_tokens")
+}
+
+model AccessAuditLog {
+  id          String      @id @default(cuid())
+  actorUserId String      @map("actor_user_id")
+  skillId     String      @map("skill_id")
+  action      AuditAction
+  accessedAt  DateTime    @default(now()) @map("accessed_at")
+
+  actor User  @relation(fields: [actorUserId], references: [id])
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@map("access_audit_log")
+}
