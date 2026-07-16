@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveApiViewer } from "@/lib/api-auth";
 import { visibleSkillsWhere } from "@/lib/visibility";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 /** GET /api/v1/skills/search?q=... — DESIGN.md §9 search_skills */
 export async function GET(req: NextRequest) {
+  const limited = enforceRateLimit(req, { limit: 60, windowMs: 60_000 });
+  if (limited) return limited;
+
   const viewer = await resolveApiViewer(req);
   if (!viewer) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
