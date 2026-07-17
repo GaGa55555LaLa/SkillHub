@@ -2,37 +2,20 @@ import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
 import { prisma } from "@/lib/prisma";
 
-const GITHUB_ORG = process.env.GITHUB_ORG!;
-
 /**
- * DESIGN.md §2.1：GitHub OAuth 純粹用來「認人」。
- * signIn callback 以使用者自己的 OAuth token 檢查是否為指定 org 的成員，
- * 非成員一律拒絕登入。
+ * DESIGN.md §2.1（v2）：GitHub OAuth 純粹用來「認人」，任何 GitHub 帳號
+ * 都可登入，登入即 upsert 平台的 users 記錄。
+ * （v1 的 org member 檢查已移除，scope 也不再需要 read:org。）
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     GitHub({
-      authorization: { params: { scope: "read:user read:org" } },
+      authorization: { params: { scope: "read:user" } },
     }),
   ],
   callbacks: {
-    async signIn({ account, profile }) {
-      if (!account?.access_token || !profile?.login) return false;
-
-      // GET /orgs/{org}/memberships/{username} 需要 admin；
-      // 改用使用者自己的 token 查自己的 membership。
-      const res = await fetch(
-        `https://api.github.com/user/memberships/orgs/${GITHUB_ORG}`,
-        {
-          headers: {
-            Authorization: `Bearer ${account.access_token}`,
-            Accept: "application/vnd.github+json",
-          },
-        }
-      );
-      if (!res.ok) return false;
-      const membership = (await res.json()) as { state?: string };
-      if (membership.state !== "active") return false;
+    async signIn({ profile }) {
+      if (!profile?.login) return false;
 
       await prisma.user.upsert({
         where: { githubId: BigInt(Number(profile.id)) },

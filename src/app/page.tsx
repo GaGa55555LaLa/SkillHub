@@ -9,7 +9,7 @@ export default async function HomePage() {
     <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
       <h1 className="text-3xl font-bold">SkillHub</h1>
       <p className="text-gray-500">
-        團隊 Skills 共享平台 — 限定 Organization 成員使用
+        Skills 共享平台 — 用 GitHub 帳號登入，連結你的 repo、分享給群組或個人
       </p>
       <form
         action={async () => {

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/viewer";
-import { syncUserSource } from "@/lib/sync";
+import { syncSource } from "@/lib/sync";
+import { resolvePlatformUser } from "@/lib/actions/groups";
 
 async function requireSourceOwner(sourceId: string) {
   const viewer = await getViewer();
@@ -12,13 +13,13 @@ async function requireSourceOwner(sourceId: string) {
   const source = await prisma.skillSource.findUniqueOrThrow({
     where: { id: sourceId },
   });
-  if (source.ownerType !== "user" || source.ownerUserId !== viewer.userId) {
+  if (source.ownerUserId !== viewer.userId) {
     throw new Error("forbidden");
   }
   return { viewer, source };
 }
 
-/** DESIGN.md §3.2：切換 whole_repo / selected_only。 */
+/** DESIGN.md §3：切換 whole_repo / selected_only。 */
 export async function updateShareMode(sourceId: string, formData: FormData) {
   await requireSourceOwner(sourceId);
   const shareMode = formData.get("shareMode");
@@ -57,44 +58,61 @@ export async function toggleSkillPublished(
   revalidatePath(`/settings/repos/${sourceId}`);
 }
 
+/** DESIGN.md §6.1：平台公開開關（repo 層級）。 */
+export async function toggleSourcePublic(sourceId: string, formData: FormData) {
+  const { source } = await requireSourceOwner(sourceId);
+  const isPublic = formData.get("isPublic") === "true";
+  await prisma.skillSource.update({
+    where: { id: source.id },
+    data: { isPublic },
+  });
+  revalidatePath(`/settings/repos/${sourceId}`);
+}
+
+/** DESIGN.md §6.1：平台公開開關（單一 skill 層級）。 */
+export async function toggleSkillPublic(
+  sourceId: string,
+  skillId: string,
+  formData: FormData
+) {
+  const { source } = await requireSourceOwner(sourceId);
+  const isPublic = formData.get("isPublic") === "true";
+  await prisma.skill.update({
+    where: { id: skillId, sourceId: source.id },
+    data: { isPublic },
+  });
+  revalidatePath(`/settings/repos/${sourceId}`);
+}
+
 /**
- * 新增分享對象。skillId 為 null 代表整個 repo 層級的分享；
+ * 分享給自己的群組。skillId 為 null 代表整個 repo 層級的分享，
  * 帶 skillId 則只分享單一 skill（DESIGN.md §6：兩種粒度並存）。
  */
-export async function addShare(sourceId: string, formData: FormData) {
+export async function addGroupShare(sourceId: string, formData: FormData) {
   const { viewer, source } = await requireSourceOwner(sourceId);
 
-  // "user:123" / "team:456" —— type 與 id 綁在同一個欄位，避免兩個獨立
-  // select 選到對不上的組合（例如選了 team 但 id 其實是某個人的）。
-  const grantee = formData.get("grantee");
+  const groupId = formData.get("groupId");
   const skillId = formData.get("skillId");
-  if (typeof grantee !== "string") throw new Error("missing grantee");
-  const [granteeType, granteeId] = grantee.split(":");
-  if (granteeType !== "user" && granteeType !== "team") {
-    throw new Error("invalid grantee type");
-  }
-  if (!granteeId) {
-    throw new Error("missing granteeId");
-  }
+  if (typeof groupId !== "string" || !groupId) throw new Error("missing groupId");
+
+  // 只能分享到自己建立的群組（分享到別人的群組沒有意義：你不知道裡面有誰）
+  await prisma.group.findFirstOrThrow({
+    where: { id: groupId, ownerUserId: viewer.userId },
+  });
 
   const resolvedSkillId =
     typeof skillId === "string" && skillId ? skillId : null;
   if (resolvedSkillId) {
-    // 確保這個 skill 真的屬於這個 source，避免跨 source 亂塞
     await prisma.skill.findUniqueOrThrow({
       where: { id: resolvedSkillId, sourceId: source.id },
     });
   }
 
-  // 不能用 upsert 搭配 compound unique key：skillId 可為 null，Prisma 的
-  // compound unique input 型別不支援 null（Postgres 的 unique constraint
-  // 本身對 NULL 也視為互不相等，不會擋重複），改用查詢後條件建立。
   const existing = await prisma.skillShare.findFirst({
     where: {
       sourceId: source.id,
       skillId: resolvedSkillId,
-      granteeType,
-      granteeId: BigInt(granteeId),
+      granteeGroupId: groupId,
     },
   });
   if (!existing) {
@@ -102,8 +120,52 @@ export async function addShare(sourceId: string, formData: FormData) {
       data: {
         sourceId: source.id,
         skillId: resolvedSkillId,
-        granteeType,
-        granteeId: BigInt(granteeId),
+        granteeGroupId: groupId,
+        grantedById: viewer.userId,
+      },
+    });
+  }
+  revalidatePath(`/settings/repos/${sourceId}`);
+}
+
+/** 分享給單一使用者（輸入 GitHub username 解析）。 */
+export async function addUserShare(sourceId: string, formData: FormData) {
+  const { viewer, source } = await requireSourceOwner(sourceId);
+
+  const username = formData.get("username");
+  const skillId = formData.get("skillId");
+  if (typeof username !== "string" || !username.trim()) {
+    throw new Error("missing username");
+  }
+
+  const user = await resolvePlatformUser(username);
+  if (!user) {
+    // GitHub 上不存在這個帳號
+    // TODO: 之後可以把錯誤帶回表單顯示
+    return;
+  }
+
+  const resolvedSkillId =
+    typeof skillId === "string" && skillId ? skillId : null;
+  if (resolvedSkillId) {
+    await prisma.skill.findUniqueOrThrow({
+      where: { id: resolvedSkillId, sourceId: source.id },
+    });
+  }
+
+  const existing = await prisma.skillShare.findFirst({
+    where: {
+      sourceId: source.id,
+      skillId: resolvedSkillId,
+      granteeUserId: user.id,
+    },
+  });
+  if (!existing) {
+    await prisma.skillShare.create({
+      data: {
+        sourceId: source.id,
+        skillId: resolvedSkillId,
+        granteeUserId: user.id,
         grantedById: viewer.userId,
       },
     });
@@ -122,6 +184,6 @@ export async function removeShare(sourceId: string, shareId: string) {
 
 export async function resyncSource(sourceId: string) {
   const { source } = await requireSourceOwner(sourceId);
-  await syncUserSource(source.id);
+  await syncSource(source.id);
   revalidatePath(`/settings/repos/${sourceId}`);
 }

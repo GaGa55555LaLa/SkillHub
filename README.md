@@ -1,21 +1,25 @@
-# SkillHub — 團隊 Skills 共享平台
+# SkillHub — Skills 共享平台
 
-供同屬一個 GitHub Organization 的競賽團隊成員上傳、瀏覽、分享 skills（Claude Skills 格式）。
-完整設計見 [DESIGN.md](./DESIGN.md)。
+任何 GitHub 使用者都能登入，連結自己的 repo、上傳 skills（Claude Skills 格式）、
+分享給自建群組或個人，或公開給平台所有人。完整設計見 [DESIGN.md](./DESIGN.md)（v2）。
 
 ## 架構
 
 - **主站**（本目錄）：Next.js App Router + Prisma (Postgres) + Auth.js
-  - GitHub OAuth 登入 + org member 檢查（`src/auth.ts`）
-  - GitHub App 掃描 repo 內 `SKILL.md` 資料夾（`src/lib/github.ts`、`src/lib/sync.ts`）
-  - 可見性判斷邏輯（`src/lib/visibility.ts`，DESIGN.md §6.1）
-  - REST API：`/api/v1/skills/search`、`/api/v1/skills/:id`、`/api/v1/skills/:id/download`
-  - 個人 repo 連結（`/settings/repos`、`/api/github/setup`）+ 分享對象設定
+  - GitHub OAuth 登入，任何帳號皆可（`src/auth.ts`）
+  - GitHub App 掃描使用者連結 repo 內的 `SKILL.md` 資料夾（`src/lib/github.ts`、`src/lib/sync.ts`）
+  - 可見性判斷邏輯（`src/lib/visibility.ts`，DESIGN.md §6.1）：
+    公開 ∪ 個人分享 ∪ 群組分享 ∪ 自己的
+  - 群組管理（`/settings/groups`，`src/lib/actions/groups.ts`）
+  - repo 連結（`/settings/repos`、`/api/github/setup`）+ 分享/公開設定
     （`/settings/repos/[id]`，`src/lib/actions/repos.ts`）
+  - REST API：`/api/v1/skills/search`、`/api/v1/skills/:id`、`/api/v1/skills/:id/download`
   - 排程 sync（`/api/cron/sync`，`vercel.json` 設定每小時觸發一次）
 - **MCP server**（`mcp-server/`）：Streamable HTTP remote MCP，
   提供 `search_skills` / `get_skill_details` / `download_skill` 三個工具，
   內部轉呼叫主站 REST API。
+- **Bootstrap skills**（`skills/`）：`skillsharing-find`、`skillsharing-download`，
+  讓 Claude 不經 MCP、直接用 curl 串 REST API。
 
 ## 開發環境設定
 
@@ -27,9 +31,13 @@
 
    需要事先建立：
    - **GitHub OAuth App**（登入用）→ `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`
-   - **GitHub App**（讀 repo 用，安裝到 org）→ `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_ORG_INSTALLATION_ID`
-     - 要在 GitHub App 設定頁的 **Setup URL** 填 `<host>/api/github/setup`
-       （個人 repo 連結流程用，開發環境填 `http://localhost:3000/api/github/setup`）
+     - Authorization callback URL：`<host>/api/auth/callback/github`
+   - **GitHub App**（讀 repo 用）→ `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY`
+     - **Where can this GitHub App be installed? 必須設為 Any account**
+       （使用者要把 App 裝到自己帳號上才能連結 repo）
+     - Setup URL 填 `<host>/api/github/setup`
+       （開發環境填 `http://localhost:3000/api/github/setup`）
+     - Repository permissions 只需要 Contents: Read-only（Metadata 自動附帶）
    - Postgres（本地可用 `npx prisma dev`，或 Neon / Supabase 免費額度）
 
 2. 建立資料庫 schema：
@@ -50,14 +58,21 @@
    cd mcp-server && npm run dev   # http://localhost:3001
    ```
 
+## 使用流程
+
+1. GitHub 登入 → Dashboard 看得到：公開的 skill、分享給你（個人或群組）的 skill、你自己的。
+2. 「我的 repo」→ 連結 repo（GitHub App installation）→ 預設全部未發布。
+3. repo 設定頁：切換曝光模式、逐 skill 發布、公開開關（repo/skill 兩層級）、
+   分享給群組或輸入 GitHub username 分享給個人。
+4. 「我的群組」→ 建群組、輸入 username 加成員（對方不需同意）。
+
 ## 排程 sync
 
-`/api/cron/sync` 會依序同步 org 全部 repo + 所有已連結的個人 repo（webhook 的保底機制）。
+`/api/cron/sync` 會遍歷所有已連結的 repo 做 diff sync（webhook 的保底機制）。
 
 - **部署在 Vercel**：`vercel.json` 已經設定每小時觸發一次；只要在 Vercel
-  專案的環境變數加上 `CRON_SECRET`（跟本機 `.env` 用同一組，或重新產生
-  一組都可以），Vercel 會自動帶對的 Authorization header，不用額外設定。
-- **其他環境**：任何排程器（一般 cron、GitHub Actions schedule）定期打
+  專案的環境變數加上 `CRON_SECRET`，Vercel 會自動帶對的 Authorization header。
+- **其他環境**：任何排程器定期打
 
   ```bash
   curl -H "Authorization: Bearer $CRON_SECRET" https://<host>/api/cron/sync
@@ -65,16 +80,14 @@
 
 ## Rate limit
 
-`/api/v1/skills/*`（search、詳細頁、下載）都套了固定視窗的 rate limit，
-用 Bearer token（或沒帶 token 時退回 IP）當 key，超過限制回 429 +
-`Retry-After` header。MCP server 只是轉呼叫這些 REST API，所以會一併
-受到保護，不需要在 MCP 那邊另外做一份。
+`/api/v1/skills/*` 都套了固定視窗的 rate limit，用 Bearer token（或沒帶 token
+時退回 IP）當 key，超過限制回 429 + `Retry-After` header。MCP server 只是轉
+呼叫這些 REST API，所以會一併受到保護。
 
-**已知限制**：目前是純記憶體實作（`src/lib/rate-limit.ts`），對單一
-長駐 process（`next start` 或保持溫機的單一 instance）沒問題，但如果
-部署成多個各自獨立、頻繁冷啟動的 serverless instance，各自的計數不會
-互相同步，實際限制會比設定值寬鬆。真的要在這種環境下精準限流，之後
-要換成 Upstash Redis（`@upstash/ratelimit`）之類的共享儲存。
+**已知限制**：目前是純記憶體實作（`src/lib/rate-limit.ts`），多個獨立
+serverless instance 下實際限制會比設定值寬鬆；要精準限流之後要換成
+Upstash Redis（`@upstash/ratelimit`）之類的共享儲存。去 org 化後任何人
+都能註冊，rate limit 比 v1 更重要。
 
 ## 測試
 
@@ -84,10 +97,9 @@ npm test
 
 `src/lib/visibility.test.ts` 是整合測試，直接打 `.env` 裡設定的真實 Postgres
 （沒有另外配測試庫）。所有 fixture 都用 `__vitest_visibility__` 開頭的
-repoFullName / githubLogin 標記，跑完在 `afterAll` 全部清掉，不會污染
-真實資料。
+repoFullName / githubLogin 標記，跑完在 `afterAll` 全部清掉，不會污染真實資料。
 
-## Claude Code 串接
+## Claude 串接
 
 在平台的 `/settings/tokens` 頁面產生 API token 後：
 
@@ -96,13 +108,5 @@ claude mcp add --transport http skillhub http://localhost:3001/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
-## 尚未實作（MVP 待辦）
-
-- [x] 個人 repo 連結流程（GitHub App installation callback）
-- [x] 分享對象設定 UI（個人 / team）
-- [x] `selected_only` 模式的 skill 勾選 UI
-- [x] API token 產生/撤銷 UI（`/settings/tokens`）
-- [x] SKILL.md 的 markdown 渲染（`react-markdown` + `remark-gfm` + `@tailwindcss/typography`）
-- [x] 排程 sync（`/api/cron/sync` + `vercel.json`）
-- [x] 可見性邏輯的自動化測試（`src/lib/visibility.test.ts`，`npm test`）
-- [x] Rate limit（`src/lib/rate-limit.ts`，純記憶體實作，見下方說明）
+或安裝 `skills/skillsharing-find`、`skills/skillsharing-download` 兩個 skill
+（設定 `SKILLHUB_URL` / `SKILLHUB_TOKEN` 環境變數），讓 Claude 直接用 curl 串接。

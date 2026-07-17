@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Webhooks } from "@octokit/webhooks";
 import { prisma } from "@/lib/prisma";
-import { syncUserSource } from "@/lib/sync";
+import { syncSource } from "@/lib/sync";
 
 let webhooks: Webhooks | undefined;
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
         where: { repoFullName },
       });
       if (source) {
-        await syncUserSource(source.id);
+        await syncSource(source.id);
       }
     }
   }

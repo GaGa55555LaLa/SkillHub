@@ -2,7 +2,6 @@ import matter from "gray-matter";
 import { prisma } from "@/lib/prisma";
 import {
   getInstallationClient,
-  listInstallationRepos,
   getHeadSha,
   findSkillDirs,
   getFileContent,
@@ -10,53 +9,13 @@ import {
 } from "@/lib/github";
 
 /**
- * DESIGN.md §3.1：掃描 org installation 底下所有 repo。
- * 用 head commit sha 做 diff，只有變動過的 repo 才重新掃描全樹；
- * 沒有 SKILL.md 的 repo 不會建立 source。
+ * DESIGN.md §3（v2）：同步單一來源（使用者連結的 repo）。
+ * 用 head commit sha 做 diff，沒變動就跳過；share_mode = selected_only
+ * 時，新發現的 skill 預設 is_published = false。
+ * （v1 的 org 全量掃描 syncOrgInstallation 已移除——來源只剩使用者
+ * 連結的 repo 一種。）
  */
-export async function syncOrgInstallation(installationId: number | bigint) {
-  const octokit = await getInstallationClient(installationId);
-  const repos = await listInstallationRepos(installationId);
-
-  for (const repo of repos) {
-    const headSha = await getHeadSha(octokit, repo.fullName, repo.defaultBranch);
-    const existing = await prisma.skillSource.findUnique({
-      where: { repoFullName: repo.fullName },
-    });
-    if (existing?.lastCommitSha === headSha) continue;
-
-    const skillDirs = await findSkillDirs(octokit, repo.fullName, headSha);
-    if (skillDirs.length === 0 && !existing) continue;
-
-    const source = await prisma.skillSource.upsert({
-      where: { repoFullName: repo.fullName },
-      update: {
-        visibility: repo.private ? "private" : "public",
-        lastCommitSha: headSha,
-        lastSyncedAt: new Date(),
-      },
-      create: {
-        repoFullName: repo.fullName,
-        ownerType: "org",
-        installationId: BigInt(installationId),
-        visibility: repo.private ? "private" : "public",
-        lastCommitSha: headSha,
-        lastSyncedAt: new Date(),
-      },
-    });
-
-    await syncSkillsForSource(source.id, repo.fullName, skillDirs, headSha, {
-      octokit,
-      defaultPublished: true,
-    });
-  }
-}
-
-/**
- * DESIGN.md §3.2：同步單一個人 repo source。
- * share_mode = selected_only 時，新發現的 skill 預設 is_published = false。
- */
-export async function syncUserSource(sourceId: string) {
+export async function syncSource(sourceId: string) {
   const source = await prisma.skillSource.findUniqueOrThrow({
     where: { id: sourceId },
   });
@@ -83,50 +42,34 @@ export async function syncUserSource(sourceId: string) {
     },
   });
 
-  await syncSkillsForSource(source.id, source.repoFullName, skillDirs, headSha, {
-    octokit,
-    defaultPublished: source.shareMode === "whole_repo",
-  });
-}
+  const defaultPublished = source.shareMode === "whole_repo";
 
-type SyncCtx = {
-  octokit: Awaited<ReturnType<typeof getInstallationClient>>;
-  defaultPublished: boolean;
-};
-
-/** 掃描結果寫入 skills 表 + 快取檔案內容（DESIGN.md §5 方案 A）。 */
-async function syncSkillsForSource(
-  sourceId: string,
-  repoFullName: string,
-  skillDirs: string[],
-  headSha: string,
-  ctx: SyncCtx
-) {
   for (const dir of skillDirs) {
     const skillMdPath = dir === "" ? "SKILL.md" : `${dir}/SKILL.md`;
-    const raw = await getFileContent(ctx.octokit, repoFullName, skillMdPath, headSha);
+    const raw = await getFileContent(octokit, source.repoFullName, skillMdPath, headSha);
     if (raw === null) continue;
 
     const { data } = matter(raw);
-    const name = (data.name as string) ?? dir.split("/").pop() ?? repoFullName;
+    const name =
+      (data.name as string) ?? dir.split("/").pop() ?? source.repoFullName;
     const description = (data.description as string) ?? null;
 
     const skill = await prisma.skill.upsert({
-      where: { sourceId_path: { sourceId, path: dir } },
+      where: { sourceId_path: { sourceId: source.id, path: dir } },
       update: { name, description, contentSha: headSha },
       create: {
-        sourceId,
+        sourceId: source.id,
         path: dir,
         name,
         description,
         contentSha: headSha,
-        isPublished: ctx.defaultPublished,
+        isPublished: defaultPublished,
       },
     });
 
-    const files = await listSkillFiles(ctx.octokit, repoFullName, dir, headSha);
+    const files = await listSkillFiles(octokit, source.repoFullName, dir, headSha);
     for (const filePath of files) {
-      const content = await getFileContent(ctx.octokit, repoFullName, filePath, headSha);
+      const content = await getFileContent(octokit, source.repoFullName, filePath, headSha);
       if (content === null) continue;
       await prisma.skillContentCache.upsert({
         where: { skillId_filePath: { skillId: skill.id, filePath } },
@@ -138,6 +81,6 @@ async function syncSkillsForSource(
 
   // 移除 repo 裡已不存在的 skill
   await prisma.skill.deleteMany({
-    where: { sourceId, path: { notIn: skillDirs } },
+    where: { sourceId: source.id, path: { notIn: skillDirs } },
   });
 }

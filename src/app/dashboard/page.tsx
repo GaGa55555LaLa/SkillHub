@@ -61,9 +61,11 @@ export default async function DashboardPage({
                 <div className="flex items-center justify-between">
                   <span className="font-semibold">{skill.name}</span>
                   <span className="text-xs text-gray-400">
-                    {skill.source.ownerType === "org"
-                      ? "Org"
-                      : "個人分享"}
+                    {skill.source.ownerUserId === viewer.userId
+                      ? "我的"
+                      : skill.isPublic || skill.source.isPublic
+                        ? "公開"
+                        : "分享給我"}
                     ・{skill.source.repoFullName}
                   </span>
                 </div>

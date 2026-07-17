@@ -1,6 +1,6 @@
 ---
 name: skillsharing-download
-description: Download and install a skill from the team's SkillHub platform into ~/.claude/skills/. Use after skillsharing-find has located a skill's id, or when the user gives you a specific SkillHub skill id to install.
+description: Download and install a skill from the SkillHub platform into ~/.claude/skills/. Use after skillsharing-find has located a skill's id, or when the user gives you a specific SkillHub skill id to install.
 allowed-tools: Bash
 ---
 

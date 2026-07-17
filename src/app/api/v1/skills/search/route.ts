@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
       name: s.name,
       description: s.description,
       owner: s.source.owner?.githubLogin ?? s.source.repoFullName.split("/")[0],
-      source_type: s.source.ownerType,
+      is_public: s.isPublic || s.source.isPublic,
     })),
   });
 }

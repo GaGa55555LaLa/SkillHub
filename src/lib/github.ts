@@ -21,11 +21,6 @@ export async function getInstallationClient(
   return getApp().getInstallationOctokit(Number(installationId));
 }
 
-/** App 安裝在 org 上的 installation client，供 org members/teams 查詢使用。 */
-export async function getOrgClient(): Promise<Octokit> {
-  return getInstallationClient(BigInt(process.env.GITHUB_ORG_INSTALLATION_ID!));
-}
-
 let appSlug: string | undefined;
 
 /** App 的公開頁 slug（用來組出 installation URL），透過 App 自身身份查詢並快取。 */
@@ -144,41 +139,24 @@ export async function listSkillFiles(
     .map((item) => item.path!);
 }
 
-/** Org 的 teams 清單與某成員所屬 team，供分享對象選單與可見性判斷使用。 */
-export async function listOrgTeams(octokit: Octokit, org: string) {
-  const res = await octokit.request("GET /orgs/{org}/teams", {
-    org,
-    per_page: 100,
-  });
-  return res.data.map((t) => ({ id: t.id, slug: t.slug, name: t.name }));
-}
-
-/** Org 成員清單，供分享對象選單使用。 */
-export async function listOrgMembers(octokit: Octokit, org: string) {
-  const res = await octokit.request("GET /orgs/{org}/members", {
-    org,
-    per_page: 100,
-  });
-  return res.data.map((m) => ({ id: m.id, login: m.login! }));
-}
-
-export async function listUserTeamIds(
-  octokit: Octokit,
-  org: string,
+/**
+ * 用 GitHub username 查公開的使用者資訊（App 自身身份即可呼叫）。
+ * 供群組加人、個人分享時把 username 解析成穩定的 githubId
+ * （DESIGN.md §4）。查不到（帳號不存在）回傳 null。
+ */
+export async function getUserByLogin(
   username: string
-): Promise<number[]> {
-  const teams = await listOrgTeams(octokit, org);
-  const ids: number[] = [];
-  for (const team of teams) {
-    try {
-      const res = await octokit.request(
-        "GET /orgs/{org}/teams/{team_slug}/memberships/{username}",
-        { org, team_slug: team.slug, username }
-      );
-      if (res.data.state === "active") ids.push(team.id);
-    } catch {
-      // 404 = 不是該 team 成員
-    }
+): Promise<{ githubId: number; login: string; avatarUrl: string } | null> {
+  try {
+    const res = await getApp().octokit.request("GET /users/{username}", {
+      username,
+    });
+    return {
+      githubId: res.data.id,
+      login: res.data.login,
+      avatarUrl: res.data.avatar_url,
+    };
+  } catch {
+    return null;
   }
-  return ids;
 }

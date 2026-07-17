@@ -1,16 +1,24 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/viewer";
-import { getOrgClient, listOrgMembers, listOrgTeams } from "@/lib/github";
 import {
   updateShareMode,
   toggleSkillPublished,
-  addShare,
+  toggleSourcePublic,
+  toggleSkillPublic,
+  addGroupShare,
+  addUserShare,
   removeShare,
   resyncSource,
 } from "@/lib/actions/repos";
 import { AppHeader } from "@/components/AppHeader";
 import { BUTTON_LINK_CLASS } from "@/lib/ui";
+
+type ShareWithGrantee = {
+  id: string;
+  granteeUser: { githubLogin: string } | null;
+  granteeGroup: { name: string } | null;
+};
 
 export default async function RepoSettingsPage({
   params,
@@ -24,28 +32,26 @@ export default async function RepoSettingsPage({
   const source = await prisma.skillSource.findUnique({
     where: { id },
     include: {
-      skills: { include: { shares: true }, orderBy: { path: "asc" } },
-      shares: { where: { skillId: null } },
+      skills: {
+        include: {
+          shares: { include: { granteeUser: true, granteeGroup: true } },
+        },
+        orderBy: { path: "asc" },
+      },
+      shares: {
+        where: { skillId: null },
+        include: { granteeUser: true, granteeGroup: true },
+      },
     },
   });
-  if (!source || source.ownerType !== "user" || source.ownerUserId !== viewer.userId) {
+  if (!source || source.ownerUserId !== viewer.userId) {
     notFound();
   }
 
-  const orgClient = await getOrgClient();
-  const org = process.env.GITHUB_ORG!;
-  const [members, teams] = await Promise.all([
-    listOrgMembers(orgClient, org),
-    listOrgTeams(orgClient, org),
-  ]);
-  const memberById = new Map(members.map((m) => [m.id, m.login]));
-  const teamById = new Map(teams.map((t) => [t.id, t.name]));
-
-  function granteeLabel(granteeType: string, granteeId: bigint) {
-    const id = Number(granteeId);
-    if (granteeType === "user") return memberById.get(id) ?? `使用者 #${id}`;
-    return teamById.get(id) ?? `Team #${id}`;
-  }
+  const myGroups = await prisma.group.findMany({
+    where: { ownerUserId: viewer.userId },
+    orderBy: { createdAt: "asc" },
+  });
 
   return (
     <main className="mx-auto w-full max-w-3xl p-8">
@@ -99,18 +105,43 @@ export default async function RepoSettingsPage({
         </form>
       </section>
 
-      {/* repo 層級分享對象 */}
+      {/* repo 層級：平台公開 + 分享對象 */}
       <section className="mb-8">
-        <h2 className="mb-2 text-lg font-semibold">整個 repo 的分享對象</h2>
-        <ShareList
-          shares={source.shares}
-          granteeLabel={granteeLabel}
-          sourceId={source.id}
-        />
-        <ShareForm sourceId={source.id} members={members} teams={teams} />
+        <h2 className="mb-2 text-lg font-semibold">整個 repo 的分享設定</h2>
+
+        <form
+          action={toggleSourcePublic.bind(null, source.id)}
+          className="mb-3"
+        >
+          <input
+            type="hidden"
+            name="isPublic"
+            value={(!source.isPublic).toString()}
+          />
+          <button
+            type="submit"
+            className={`rounded-full px-3 py-1 text-xs ${
+              source.isPublic
+                ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
+                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+            }`}
+          >
+            {source.isPublic
+              ? "已公開給平台所有人（點擊改回私有）"
+              : "未公開（點擊公開給平台所有人）"}
+          </button>
+        </form>
+        {source.isPublic && (
+          <p className="mb-3 text-xs text-amber-600 dark:text-amber-400">
+            注意：任何人都能註冊本平台，公開實質等於全世界可見。
+          </p>
+        )}
+
+        <ShareList shares={source.shares} sourceId={source.id} />
+        <ShareForms sourceId={source.id} groups={myGroups} />
       </section>
 
-      {/* skill 清單 + 逐一發布 + 逐一分享 */}
+      {/* skill 清單 + 逐一發布/公開 + 逐一分享 */}
       <section>
         <h2 className="mb-2 text-lg font-semibold">Skills</h2>
         <ul className="space-y-4">
@@ -128,27 +159,48 @@ export default async function RepoSettingsPage({
                     </span>
                   )}
                 </div>
-                {source.shareMode === "selected_only" && (
+                <div className="flex items-center gap-2">
+                  {source.shareMode === "selected_only" && (
+                    <form
+                      action={toggleSkillPublished.bind(null, source.id, skill.id)}
+                    >
+                      <input
+                        type="hidden"
+                        name="isPublished"
+                        value={(!skill.isPublished).toString()}
+                      />
+                      <button
+                        type="submit"
+                        className={`rounded-full px-3 py-1 text-xs ${
+                          skill.isPublished
+                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                        }`}
+                      >
+                        {skill.isPublished ? "已發布" : "未發布"}
+                      </button>
+                    </form>
+                  )}
                   <form
-                    action={toggleSkillPublished.bind(null, source.id, skill.id)}
+                    action={toggleSkillPublic.bind(null, source.id, skill.id)}
                   >
                     <input
                       type="hidden"
-                      name="isPublished"
-                      value={(!skill.isPublished).toString()}
+                      name="isPublic"
+                      value={(!skill.isPublic).toString()}
                     />
                     <button
                       type="submit"
                       className={`rounded-full px-3 py-1 text-xs ${
-                        skill.isPublished
-                          ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                        skill.isPublic
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
                           : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
                       }`}
                     >
-                      {skill.isPublished ? "已發布（點擊隱藏）" : "未發布（點擊發布）"}
+                      {skill.isPublic ? "已公開" : "未公開"}
                     </button>
                   </form>
-                )}
+                </div>
               </div>
               {skill.description && (
                 <p className="mt-1 text-sm text-gray-500">
@@ -160,16 +212,11 @@ export default async function RepoSettingsPage({
                 <p className="mb-1 text-xs font-medium text-gray-500">
                   只分享此 skill 給：
                 </p>
-                <ShareList
-                  shares={skill.shares}
-                  granteeLabel={granteeLabel}
-                  sourceId={source.id}
-                />
-                <ShareForm
+                <ShareList shares={skill.shares} sourceId={source.id} />
+                <ShareForms
                   sourceId={source.id}
                   skillId={skill.id}
-                  members={members}
-                  teams={teams}
+                  groups={myGroups}
                   compact
                 />
               </div>
@@ -183,15 +230,13 @@ export default async function RepoSettingsPage({
 
 function ShareList({
   shares,
-  granteeLabel,
   sourceId,
 }: {
-  shares: { id: string; granteeType: string; granteeId: bigint }[];
-  granteeLabel: (type: string, id: bigint) => string;
+  shares: ShareWithGrantee[];
   sourceId: string;
 }) {
   if (shares.length === 0) {
-    return <p className="text-sm text-gray-400">尚未分享給任何人</p>;
+    return <p className="mb-2 text-sm text-gray-400">尚未分享給任何人</p>;
   }
   return (
     <ul className="mb-2 flex flex-wrap gap-2">
@@ -201,8 +246,9 @@ function ShareList({
           className="flex items-center gap-2 rounded-full border border-gray-300 px-3 py-1 text-xs dark:border-gray-700"
         >
           <span>
-            {share.granteeType === "team" ? "Team: " : ""}
-            {granteeLabel(share.granteeType, share.granteeId)}
+            {share.granteeGroup
+              ? `群組: ${share.granteeGroup.name}`
+              : share.granteeUser?.githubLogin ?? "?"}
           </span>
           <form action={removeShare.bind(null, sourceId, share.id)}>
             <button
@@ -219,51 +265,63 @@ function ShareList({
   );
 }
 
-function ShareForm({
+function ShareForms({
   sourceId,
   skillId,
-  members,
-  teams,
+  groups,
   compact,
 }: {
   sourceId: string;
   skillId?: string;
-  members: { id: number; login: string }[];
-  teams: { id: number; slug: string; name: string }[];
+  groups: { id: string; name: string }[];
   compact?: boolean;
 }) {
+  const sizeClass = compact ? "text-xs" : "text-sm";
   return (
-    <form
-      action={addShare.bind(null, sourceId)}
-      className={`flex items-center gap-2 ${compact ? "text-xs" : "text-sm"}`}
-    >
-      {skillId && <input type="hidden" name="skillId" value={skillId} />}
-      {/* type 與 id 編碼在同一個 value 裡，避免兩個獨立 select 選到對不上的組合 */}
-      <select
-        name="grantee"
-        className="min-w-[10rem] rounded border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-700"
+    <div className={`flex flex-wrap items-center gap-3 ${sizeClass}`}>
+      {groups.length > 0 && (
+        <form
+          action={addGroupShare.bind(null, sourceId)}
+          className="flex items-center gap-2"
+        >
+          {skillId && <input type="hidden" name="skillId" value={skillId} />}
+          <select
+            name="groupId"
+            className="rounded border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-700"
+          >
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="rounded border border-gray-300 px-2 py-1 hover:border-gray-500 dark:border-gray-700"
+          >
+            分享給群組
+          </button>
+        </form>
+      )}
+      <form
+        action={addUserShare.bind(null, sourceId)}
+        className="flex items-center gap-2"
       >
-        <optgroup label="成員">
-          {members.map((m) => (
-            <option key={`user-${m.id}`} value={`user:${m.id}`}>
-              {m.login}
-            </option>
-          ))}
-        </optgroup>
-        <optgroup label="Team">
-          {teams.map((t) => (
-            <option key={`team-${t.id}`} value={`team:${t.id}`}>
-              {t.name}
-            </option>
-          ))}
-        </optgroup>
-      </select>
-      <button
-        type="submit"
-        className="rounded border border-gray-300 px-2 py-1 hover:border-gray-500 dark:border-gray-700"
-      >
-        新增分享
-      </button>
-    </form>
+        {skillId && <input type="hidden" name="skillId" value={skillId} />}
+        <input
+          type="text"
+          name="username"
+          required
+          placeholder="GitHub username…"
+          className="w-40 rounded border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-700"
+        />
+        <button
+          type="submit"
+          className="rounded border border-gray-300 px-2 py-1 hover:border-gray-500 dark:border-gray-700"
+        >
+          分享給個人
+        </button>
+      </form>
+    </div>
   );
 }

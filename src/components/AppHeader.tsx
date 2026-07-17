@@ -11,6 +11,9 @@ export function AppHeader({ githubLogin }: { githubLogin: string }) {
         <Link href="/settings/repos" className={BUTTON_LINK_CLASS}>
           我的 repo
         </Link>
+        <Link href="/settings/groups" className={BUTTON_LINK_CLASS}>
+          我的群組
+        </Link>
         <Link href="/settings/tokens" className={BUTTON_LINK_CLASS}>
           API Tokens
         </Link>

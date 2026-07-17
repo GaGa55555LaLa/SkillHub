@@ -11,7 +11,7 @@ export default async function MyReposPage() {
 
   const [sources, appSlug] = await Promise.all([
     prisma.skillSource.findMany({
-      where: { ownerType: "user", ownerUserId: viewer.userId },
+      where: { ownerUserId: viewer.userId },
       include: { skills: true },
       orderBy: { createdAt: "desc" },
     }),

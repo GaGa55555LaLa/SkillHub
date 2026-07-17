@@ -1,14 +1,14 @@
 ---
 name: skillsharing-find
-description: Search for skills shared on the team's SkillHub platform (org-wide skills and skills teammates have shared with you). Use when the user asks "is there a skill for X", "find a skill that does Y", wants to check what's already available before writing a new skill, or mentions SkillHub by name.
+description: Search for skills shared on the SkillHub platform (public skills and skills shared with you directly or via a group). Use when the user asks "is there a skill for X", "find a skill that does Y", wants to check what's already available before writing a new skill, or mentions SkillHub by name.
 allowed-tools: Bash
 ---
 
 # SkillHub Find
 
-Search the team's SkillHub platform for existing skills before writing a new one from
-scratch. Results only include skills the current user can actually see — org-wide
-skills, plus anything personally shared with them.
+Search the SkillHub platform for existing skills before writing a new one from
+scratch. Results only include skills the current user can actually see — platform-public
+skills, plus anything shared with them directly or via a group they belong to.
 
 ## Setup (one-time)
 
@@ -35,7 +35,7 @@ user to set them up rather than guessing values.
 Calls `GET $SKILLHUB_URL/api/v1/skills/search?q=<query>` and prints the JSON response:
 
 ```json
-{ "skills": [{ "id": "...", "name": "...", "description": "...", "owner": "...", "source_type": "org | user" }] }
+{ "skills": [{ "id": "...", "name": "...", "description": "...", "owner": "...", "is_public": true }] }
 ```
 
 Present the results to the user as a short list: name, one-line description, and owner.

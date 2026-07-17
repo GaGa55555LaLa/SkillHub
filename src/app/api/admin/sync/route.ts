@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/viewer";
-import { syncOrgInstallation } from "@/lib/sync";
+import { syncSource } from "@/lib/sync";
 
 const DEBOUNCE_MS = 5 * 60 * 1000;
 
 /**
- * POST /api/admin/sync — DESIGN.md §3.1 Admin 手動「立即刷新」。
+ * POST /api/admin/sync — Admin 手動「立即刷新」所有來源。
  * 5 分鐘防抖，避免誤觸浪費 GitHub API quota。
  * Admin 名單先用環境變數 ADMIN_LOGINS（逗號分隔）管理。
  */
@@ -22,7 +22,6 @@ export async function POST() {
   }
 
   const lastSync = await prisma.skillSource.aggregate({
-    where: { ownerType: "org" },
     _max: { lastSyncedAt: true },
   });
   const last = lastSync._max.lastSyncedAt;
@@ -33,14 +32,9 @@ export async function POST() {
     );
   }
 
-  const orgInstallationId = process.env.GITHUB_ORG_INSTALLATION_ID;
-  if (!orgInstallationId) {
-    return NextResponse.json(
-      { error: "GITHUB_ORG_INSTALLATION_ID not configured" },
-      { status: 500 }
-    );
+  const sources = await prisma.skillSource.findMany({ select: { id: true } });
+  for (const source of sources) {
+    await syncSource(source.id);
   }
-
-  await syncOrgInstallation(BigInt(orgInstallationId));
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, synced: sources.length });
 }

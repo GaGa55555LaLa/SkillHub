@@ -34,7 +34,7 @@ function buildServer(bearerToken: string): McpServer {
     "search_skills",
     {
       description:
-        "搜尋你可見的 skills（org 全體 + 分享給你的 + 你自己的）。回傳 id、名稱、描述、擁有者。",
+        "搜尋你可見的 skills（平台公開 + 分享給你或你所屬群組的 + 你自己的）。回傳 id、名稱、描述、擁有者。",
       inputSchema: { query: z.string().describe("關鍵字，比對名稱與描述") },
     },
     async ({ query }) => {

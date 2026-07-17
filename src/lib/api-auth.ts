@@ -1,8 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getViewer, type Viewer } from "@/lib/viewer";
-import { getInstallationClient, listUserTeamIds } from "@/lib/github";
+import { getViewer, buildViewer, type Viewer } from "@/lib/viewer";
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -39,28 +38,7 @@ export async function resolveApiViewer(
       data: { lastUsedAt: new Date() },
     });
 
-    let teamIds: bigint[] = [];
-    const orgInstallationId = process.env.GITHUB_ORG_INSTALLATION_ID;
-    if (orgInstallationId) {
-      try {
-        const octokit = await getInstallationClient(BigInt(orgInstallationId));
-        const ids = await listUserTeamIds(
-          octokit,
-          process.env.GITHUB_ORG!,
-          record.user.githubLogin
-        );
-        teamIds = ids.map((id) => BigInt(id));
-      } catch {
-        // 降級為不含 team 分享
-      }
-    }
-
-    return {
-      userId: record.user.id,
-      githubId: record.user.githubId,
-      githubLogin: record.user.githubLogin,
-      teamIds,
-    };
+    return buildViewer(record.user);
   }
 
   return getViewer();

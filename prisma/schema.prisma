@@ -7,11 +7,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum OwnerType {
-  org
-  user
-}
-
 enum ShareMode {
   whole_repo
   selected_only
@@ -20,11 +15,6 @@ enum ShareMode {
 enum RepoVisibility {
   public
   private
-}
-
-enum GranteeType {
-  user
-  team
 }
 
 enum AuditAction {
@@ -39,10 +29,13 @@ model User {
   githubAvatarUrl String?  @map("github_avatar_url")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  ownedSources  SkillSource[]    @relation("SourceOwner")
-  apiTokens     ApiToken[]
-  auditLogs     AccessAuditLog[]
-  grantedShares SkillShare[]     @relation("ShareGrantedBy")
+  ownedSources     SkillSource[]    @relation("SourceOwner")
+  apiTokens        ApiToken[]
+  auditLogs        AccessAuditLog[]
+  grantedShares    SkillShare[]     @relation("ShareGrantedBy")
+  receivedShares   SkillShare[]     @relation("ShareGranteeUser")
+  ownedGroups      Group[]          @relation("GroupOwner")
+  groupMemberships GroupMember[]
 
   @@map("users")
 }
@@ -50,16 +43,16 @@ model User {
 model SkillSource {
   id             String         @id @default(cuid())
   repoFullName   String         @unique @map("repo_full_name")
-  ownerType      OwnerType      @map("owner_type")
-  ownerUserId    String?        @map("owner_user_id")
+  ownerUserId    String         @map("owner_user_id")
   installationId BigInt         @map("installation_id")
-  shareMode      ShareMode      @default(whole_repo) @map("share_mode")
+  shareMode      ShareMode      @default(selected_only) @map("share_mode")
   visibility     RepoVisibility @default(private)
+  isPublic       Boolean        @default(false) @map("is_public")
   lastSyncedAt   DateTime?      @map("last_synced_at")
   lastCommitSha  String?        @map("last_commit_sha")
   createdAt      DateTime       @default(now()) @map("created_at")
 
-  owner  User?        @relation("SourceOwner", fields: [ownerUserId], references: [id])
+  owner  User         @relation("SourceOwner", fields: [ownerUserId], references: [id])
   skills Skill[]
   shares SkillShare[]
 
@@ -74,6 +67,7 @@ model Skill {
   description String?
   contentSha  String?  @map("content_sha")
   isPublished Boolean  @default(true) @map("is_published")
+  isPublic    Boolean  @default(false) @map("is_public")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -99,20 +93,48 @@ model SkillContentCache {
   @@map("skill_content_cache")
 }
 
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  ownerUserId String   @map("owner_user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  owner   User          @relation("GroupOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  members GroupMember[]
+  shares  SkillShare[]
+
+  @@unique([ownerUserId, name])
+  @@map("groups")
+}
+
+model GroupMember {
+  id      String   @id @default(cuid())
+  groupId String   @map("group_id")
+  userId  String   @map("user_id")
+  addedAt DateTime @default(now()) @map("added_at")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("group_members")
+}
+
 model SkillShare {
-  id          String      @id @default(cuid())
-  skillId     String?     @map("skill_id")
-  sourceId    String      @map("source_id")
-  granteeType GranteeType @map("grantee_type")
-  granteeId   BigInt      @map("grantee_id")
-  grantedById String      @map("granted_by")
-  grantedAt   DateTime    @default(now()) @map("granted_at")
+  id             String   @id @default(cuid())
+  skillId        String?  @map("skill_id")
+  sourceId       String   @map("source_id")
+  granteeUserId  String?  @map("grantee_user_id")
+  granteeGroupId String?  @map("grantee_group_id")
+  grantedById    String   @map("granted_by")
+  grantedAt      DateTime @default(now()) @map("granted_at")
 
-  skill     Skill?      @relation(fields: [skillId], references: [id], onDelete: Cascade)
-  source    SkillSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  grantedBy User        @relation("ShareGrantedBy", fields: [grantedById], references: [id])
+  skill        Skill?      @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  source       SkillSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  granteeUser  User?       @relation("ShareGranteeUser", fields: [granteeUserId], references: [id], onDelete: Cascade)
+  granteeGroup Group?      @relation(fields: [granteeGroupId], references: [id], onDelete: Cascade)
+  grantedBy    User        @relation("ShareGrantedBy", fields: [grantedById], references: [id])
 
-  @@unique([sourceId, skillId, granteeType, granteeId])
   @@map("skill_shares")
 }
 

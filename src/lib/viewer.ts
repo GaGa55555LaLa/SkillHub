@@ -1,21 +1,36 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { getInstallationClient, listUserTeamIds } from "@/lib/github";
 
 export type Viewer = {
   userId: string;
   githubId: bigint;
   githubLogin: string;
-  teamIds: bigint[];
+  groupIds: string[];
 };
 
 /**
- * 從 session 解析出可見性判斷所需的 viewer 資訊（DESIGN.md §6.1）。
- * 未登入或非 org 成員回傳 null。
- *
- * TODO: team 成員資訊每次請求都打 GitHub API 太慢，之後要加快取
- * （例如存進 session token 或 DB，隨排程 sync 更新）。
+ * 把 DB user 補上群組 membership，組成可見性判斷（DESIGN.md §6.1）所需的
+ * viewer。群組查詢一律走平台 DB，不打 GitHub API（v1 查 org teams 的
+ * 版本已移除）。
  */
+export async function buildViewer(user: {
+  id: string;
+  githubId: bigint;
+  githubLogin: string;
+}): Promise<Viewer> {
+  const memberships = await prisma.groupMember.findMany({
+    where: { userId: user.id },
+    select: { groupId: true },
+  });
+  return {
+    userId: user.id,
+    githubId: user.githubId,
+    githubLogin: user.githubLogin,
+    groupIds: memberships.map((m) => m.groupId),
+  };
+}
+
+/** 從 session 解析 viewer。未登入回傳 null。 */
 export async function getViewer(): Promise<Viewer | null> {
   const session = await auth();
   if (!session?.user?.githubLogin) return null;
@@ -25,26 +40,5 @@ export async function getViewer(): Promise<Viewer | null> {
   });
   if (!user) return null;
 
-  let teamIds: bigint[] = [];
-  const orgInstallationId = process.env.GITHUB_ORG_INSTALLATION_ID;
-  if (orgInstallationId) {
-    try {
-      const octokit = await getInstallationClient(BigInt(orgInstallationId));
-      const ids = await listUserTeamIds(
-        octokit,
-        process.env.GITHUB_ORG!,
-        user.githubLogin
-      );
-      teamIds = ids.map((id) => BigInt(id));
-    } catch {
-      // GitHub API 失敗時降級為「不含 team 分享」而非整站掛掉
-    }
-  }
-
-  return {
-    userId: user.id,
-    githubId: user.githubId,
-    githubLogin: user.githubLogin,
-    teamIds,
-  };
+  return buildViewer(user);
 }

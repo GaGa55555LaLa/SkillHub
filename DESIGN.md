@@ -1,21 +1,29 @@
-# 學生叢集競賽團隊 Skills 共享平台 — 設計文件
+# SkillHub — Skills 共享平台 設計文件（v2：去 Organization 化）
+
+> v1 以 GitHub Organization 為邊界（org 成員才能登入、org repo 全員可見、
+> 分享對象含 org team）。v2 拿掉 org 綁定：**任何 GitHub 帳號都能登入**，
+> 每個人以自己的身份連結 repo、瀏覽與分享；分享對象改為**平台自建群組**
+> 與個人。本文件為 v2 的完整規格，v1 的差異只在此註明，不另留舊文。
 
 ## 1. 專案目標
 
-供同屬一個 GitHub Organization 的競賽團隊成員上傳、瀏覽、分享 skills（不限比賽用途）。
+供任何 GitHub 使用者上傳、瀏覽、分享 skills。
 Skill 格式比照 Claude Skills：repo 內一個含 `SKILL.md`（frontmatter: name、description、觸發時機）
 的資料夾，加上相關腳本/範本/資源檔案。一個 repo 可以包含多個 skill。
 
-Skill 來源分兩種：
+**來源只有一種**：使用者自己連結的 GitHub repo（個人帳號或其管理的 org 帳號皆可，
+平台一視同仁——誰連結的，誰就是這個來源的擁有者）。
 
-| 來源 | 位置 | 預設可見度 |
-|---|---|---|
-| Org repo | `github.com/<org>/<repo>` | Org 全體成員可見 |
-| 個人 repo | `github.com/<user>/<repo>` | 僅擁有者本人，由擁有者手動指定分享對象 |
+可見度模型（詳見 §6.1）：
 
-兩種來源最終都正規化成同一種「skill 條目」，前端與 API 不區分來源，只區分「誰能看到」。
+| 層級 | 誰看得到 |
+|---|---|
+| 私有（預設） | 只有擁有者 |
+| 分享給個人 | 被指定的使用者 |
+| 分享給群組 | 群組內所有成員（群組是平台自建的，見 §4） |
+| 公開 | 平台上所有登入使用者（**注意：任何人都能註冊，公開實質等於全世界可見**） |
 
-除了網站介面外，另外提供 **remote MCP server**，讓團隊成員可以直接透過 Claude（Claude Code /
+除了網站介面外，另外提供 **remote MCP server**，讓使用者直接透過 Claude（Claude Code /
 Claude.ai custom connector）搜尋並下載 skill。
 
 ---
@@ -24,84 +32,80 @@ Claude.ai custom connector）搜尋並下載 skill。
 
 ### 2.1 兩種身份機制分工
 
-- **GitHub OAuth（Auth.js / NextAuth）**：純粹用來「認人」——使用者登入平台的身份驗證，
-  同時用來檢查是否為指定 org 的 member（`GET /orgs/{org}/members/{username}`），非成員一律拒絕進站。
-- **GitHub App**：用來「取資料」——讀取 repo 內容，與使用者的登入身份無關。平台後端一律用
-  App 的 installation token 去讀取內容，再由平台自己的權限表把關誰能看到什麼。這樣即使
-  skill 被分享給某人，對方也完全不需要自己安裝 App 或被加為 GitHub collaborator。
+- **GitHub OAuth（Auth.js / NextAuth）**：純粹用來「認人」——任何 GitHub 帳號都可登入，
+  登入即在平台建立/更新 `users` 記錄。（v1 的 org member 檢查已移除，scope 只需 `read:user`。）
+- **GitHub App**：用來「取資料」——讀取 repo 內容，與登入身份無關。平台後端一律用
+  App 的 installation token 讀取內容，再由平台自己的權限表把關誰能看到什麼。被分享者
+  完全不需要安裝 App 或被加為 GitHub collaborator。
 
 ### 2.2 GitHub App 權限範圍
 
-- Organization members（read）— 登入時驗證 org 成員身份
-- Organization teams（read）— 讓分享對象選單支援「team」
-- Repository contents（read）— 讀取 org repo 與個人授權 repo 的內容
+- Repository contents（read）— 讀取使用者授權 repo 的內容
 - Metadata（read）— 基本必要權限
 
-不需要 collaborator write / administration 權限（見 §5 私有內容存取方案）。
+（v1 需要的 Organization members / teams read 權限已不再需要。）
 
-### 2.3 安裝範圍
+App 的「Where can this GitHub App be installed?」必須設為 **Any account**，
+任何使用者才能把 App 裝到自己的帳號上。
 
-- App 裝在 Organization 上（installation 選「All repositories」），自動涵蓋所有 org repo。
-- 個人 repo 不會自動被涵蓋，需要成員主動走「連結我的 repo」流程：
-  導去 GitHub App installation 設定頁 → 選擇要授權的個人 repo → callback 回平台 → 平台記錄
-  該 repo 屬於該使用者，並開放後續掃描與分享設定。
+### 2.3 連結 repo 流程
+
+使用者主動走「連結我的 repo」：導去 GitHub App installation 頁 → 把 App 裝到
+自己的帳號（或自己管理的 org）並選擇授權哪些 repo → GitHub 導回平台的 Setup URL
+（`/api/github/setup?installation_id=...`）→ 平台以當下登入 session 記錄
+「這些 repo 屬於這位使用者」，並觸發首次掃描。
 
 ---
 
 ## 3. Skill 掃描機制
 
-### 3.1 Org 端（來源一）
-
-- **觸發方式**：排程（每天一次）+ Admin 手動「立即刷新」按鈕（加防抖，5 分鐘內限觸發一次）。
-- **流程**：
-  1. 用 installation token 呼叫 `GET /installation/repositories`，取得 App 可見的所有 org repo 清單。
-  2. 用各 repo 的 `pushed_at` / default branch 最新 commit sha 與上次掃描記錄比對，只有變動過的
-     repo 才重新掃描。
-  3. 對有變動的 repo 呼叫 `GET /repos/{owner}/{repo}/git/trees/{default_branch}?recursive=1`，
-     篩出路徑符合 `**/SKILL.md` 的項目，其上一層資料夾視為一個 skill root。
-  4. 寫入/更新 `skills` 表；沒有 SKILL.md 的 repo 直接跳過，不會出現在平台上。
-
-### 3.2 個人 repo 端（來源二）
-
 連結 repo 時選擇 `share_mode`：
 
-- **`whole_repo`**：掃描出的所有 skill 全部沿用該 repo 目前的分享設定；未來新增的 skill
-  資料夾會自動繼承同樣的分享對象，不需要每次手動 re-share。
-- **`selected_only`**：連結後看到掃描出的 skill 清單，使用者自行勾選要曝光哪幾個
-  （`skills.is_published`）。未勾選的 skill 完全不會出現在平台上，其他人也無從得知其存在。
-  未來新增的 skill 預設 `is_published = false`，需要使用者手動勾選才會發布。
+- **`whole_repo`**：掃描出的所有 skill 全部沿用該 repo 目前的分享/公開設定；
+  未來新增的 skill 資料夾自動繼承，不需要每次手動 re-share。
+- **`selected_only`**（連結時的預設）：使用者自行勾選要曝光哪幾個
+  （`skills.is_published`）。未勾選的 skill 完全不會出現在平台上。
+  未來新增的 skill 預設 `is_published = false`。
 
-同步機制與 §3.1 相同（webhook push event 觸發 + 排程 diff sync 作為保底）。
+掃描流程：
+1. 用該來源的 installation token 取 default branch 最新 commit sha，與上次記錄比對，
+   沒變動就跳過。
+2. `GET /repos/{owner}/{repo}/git/trees/{sha}?recursive=1` 篩出 `**/SKILL.md`，
+   其上層資料夾視為 skill root。
+3. 解析 SKILL.md frontmatter 寫入 `skills` 表，並把 skill 資料夾底下**所有檔案**
+   內容快取進 `skill_content_cache`（見 §5）。
 
----
-
-## 4. 分享對象
-
-`skill_shares` 支援 `grantee_type = 'user' | 'team'`，分享對象選單合併顯示 org members 與
-org teams 兩個群組。
-
-**已知限制**：GitHub 原生的 Team repo 權限只作用在 org 擁有的 repo，無法套用在個人帳號 repo 上。
-因此「分享給某個 team」這件事完全是**平台層**的邏輯（平台自己的資料庫記錄誰在哪個 team、
-誰能看到什麼），不會、也不需要反映到 GitHub 原生的 repo collaborator 設定上——這正是
-§5 選擇「平台代理內容」而非「邀請為 collaborator」的原因之一。
+觸發方式：webhook push event（若啟用）＋排程 sync 保底（`/api/cron/sync`，
+遍歷所有來源）＋擁有者在 repo 設定頁手動「重新掃描」。
 
 ---
 
-## 5. 私有個人 repo 的內容存取（方案 A：平台代理）
+## 4. 群組（Groups）
 
-**結論：內容一律由平台代理顯示/下載，不依賴 GitHub 原生連結或 collaborator 機制。**
+- 任何使用者都可以建立群組（`groups`），群組屬於建立者。
+- **加人機制**：擁有者輸入對方的 GitHub username 直接加入，對方不需同意
+  （被加入只是獲得觀看權，無風險）。平台用 GitHub API `GET /users/{username}`
+  解析出穩定的 `github_id`，若對方還沒登入過平台，先建立 placeholder `users`
+  記錄——之後對方首次登入時以 `github_id` 對上同一筆。
+- 分享對象選單只列出**自己建立的**群組（分享到別人的群組沒有意義：你不知道
+  裡面有誰）。
+- 群組成員身份只影響可見性判斷（§6.1），查詢一律走平台 DB，不打 GitHub API。
 
-- 平台用 App installation token 抓取 SKILL.md 與相關檔案內容，快取進 `skill_content_cache`。
-- 被分享者在平台頁面直接看到完整內容（名稱、描述、渲染後的 SKILL.md、檔案列表），
-  **不會**也**不需要**被加為該私有 repo 的 GitHub collaborator。
-- 「查看原始 repo」連結：
-  - 來源 repo 為 **public** → 直接連 `github.com/...`。
-  - 來源 repo 為 **private** → 不提供會 404 的 GitHub 連結，改為顯示「原始 repo 為私有，
-    此內容由擁有者透過本平台分享」，並提供平台自己的「下載」按鈕（列出檔案內容 / 打包 zip）。
+---
 
-**設計意涵**：平台本身即為實際的存取控制邊界；GitHub 的 private 設定只擋住「未被分享」的人，
-一旦擁有者透過平台分享，內容存取即由平台的 `skill_shares` 判斷邏輯把關，不再是 GitHub 原生 ACL。
-這個判斷邏輯必須嚴格測試，且所有存取需要留稽核 log（見 §8）。
+## 5. 私有 repo 的內容存取（平台代理）
+
+**內容一律由平台代理顯示/下載，不依賴 GitHub 原生連結或 collaborator 機制。**
+
+- 平台用 App installation token 抓取 skill 資料夾全部檔案內容，快取進
+  `skill_content_cache`。
+- 被分享者在平台頁面直接看到完整內容，不需要成為該 repo 的 collaborator。
+- 「查看原始 repo」連結：來源 repo 為 GitHub public → 直接連 `github.com/...`；
+  private → 顯示「原始 repo 為私有，此內容由擁有者透過本平台分享」，
+  改用平台內建下載。
+
+**設計意涵**：平台本身即為實際的存取控制邊界。可見性判斷邏輯必須嚴格測試，
+所有內容存取寫入稽核 log（§8）。
 
 ---
 
@@ -109,108 +113,106 @@ org teams 兩個群組。
 
 ```
 users
-  id, github_id, github_login, github_avatar_url
+  id, github_id (unique), github_login (unique), github_avatar_url
+  -- 可能是 placeholder（被加進群組/被分享但還沒登入過的人）
 
 skill_sources                          -- 一個 repo = 一個來源
   id
-  repo_full_name
-  owner_type            'org' | 'user'
-  owner_user_id          nullable，個人 repo 才有
+  repo_full_name (unique)
+  owner_user_id        -> users（必填；v1 的 owner_type 'org'|'user' 已移除）
   installation_id
-  share_mode             'whole_repo' | 'selected_only'   -- 僅個人 repo 有意義
-  visibility              'public' | 'private'              -- 對應 GitHub repo 可見度
-  last_synced_at
-  last_commit_sha
+  share_mode            'whole_repo' | 'selected_only'
+  visibility            'public' | 'private'    -- 對應 GitHub repo 本身的可見度
+  is_public             boolean, default false  -- 平台層公開：全平台使用者可見
+  last_synced_at, last_commit_sha
 
-skills                                  -- repo 內偵測到的每個 skill 資料夾
+skills
   id
   source_id          -> skill_sources
-  path                （repo 內資料夾路徑）
-  name
-  description
-  content_sha         （判斷是否需要重新 sync 快取）
-  is_published         boolean，預設 true；share_mode='selected_only' 時預設 false
+  path, name, description, content_sha
+  is_published        boolean；selected_only 模式下新 skill 預設 false
+  is_public           boolean, default false  -- 單一 skill 層級的平台公開
 
-skill_content_cache                     -- 私有內容快取（方案 A 用）
-  id
-  skill_id           -> skills
-  file_path
-  file_content
-  cached_at
+skill_content_cache
+  id, skill_id -> skills, file_path, file_content, cached_at
+
+groups
+  id, name, owner_user_id -> users, created_at
+  unique(owner_user_id, name)
+
+group_members
+  id, group_id -> groups, user_id -> users, added_at
+  unique(group_id, user_id)
 
 skill_shares
   id
-  skill_id            -> skills，nullable（若為 null 代表整個 source 的分享設定）
+  skill_id            -> skills，nullable（null = 整個 source 層級的分享）
   source_id           -> skill_sources
-  grantee_type         'user' | 'team'
-  grantee_id           （github user id 或 team id）
-  granted_by
-  granted_at
+  grantee_user_id     -> users，nullable   ┐ 兩者恰好填一個
+  grantee_group_id    -> groups，nullable  ┘（v1 的 grantee_type+grantee_id 已改為 FK）
+  granted_by, granted_at
 
-api_tokens                              -- 供 MCP / API 使用
-  id
-  user_id             -> users
-  token_hash
-  created_at
-  last_used_at
-  revoked_at
+api_tokens
+  id, user_id -> users, token_hash (unique), created_at, last_used_at, revoked_at
 
 access_audit_log
-  id
-  actor_user_id
-  skill_id
-  action                'view' | 'download'
-  accessed_at
+  id, actor_user_id, skill_id, action 'view'|'download', accessed_at
 ```
 
-### 6.1 可見性判斷邏輯（讀取 skill 列表時，後端強制執行，前端不可信任過濾）
+### 6.1 可見性判斷邏輯（後端強制執行，前端不可信任過濾）
 
 ```
 可見 skill 清單 =
-  ( source.owner_type = 'org' 的所有已發布 skill )
+  ( 已發布 且 (source.is_public 或 skill.is_public) )          -- 平台公開
   UNION
-  ( skill_shares 命中「目前使用者」或「目前使用者所屬的 org team」，
-    比對 skill_id 或其所屬 source_id 的分享設定 )
+  ( 已發布 且 skill_shares 命中「目前使用者」                    -- 個人分享
+    或「目前使用者所屬的任一群組」，
+    比對 skill 層級或其 source 層級的分享設定 )                  -- 群組分享
   UNION
-  ( 目前使用者自己是該 skill 的 owner，無論是否已發布 )
+  ( 目前使用者是該 source 的擁有者，無論是否發布/公開 )          -- 自己的
 ```
+
+硬規則：`is_published = false` 的 skill 對非擁有者一律不可見，
+即使被分享或來源設為公開。
 
 ---
 
 ## 7. 使用者操作流程
 
-1. **登入**：GitHub OAuth → 檢查 org member 身份 → 通過才能進站。
-2. **瀏覽/搜尋**：Dashboard 列出可見 skill，可依來源（org / 分享給我）、擁有者、關鍵字搜尋。
-3. **Org skill**：自動出現，不需手動上傳；成員可選擇「認領」自己寫的 skill 以顯示歸屬。
-4. **個人 repo skill**：
-   - 「連結我的 repo」→ 走 GitHub App installation 授權 → 選擇 `share_mode`
-     （整包 or 選擇性發布）→ 選分享對象（個人帳號或 team）。
-   - 「我的分享」頁面可隨時增減分享對象、切換 `is_published`、收回分享。
-5. **檢視 skill**：點進去看名稱、描述、渲染後的 SKILL.md 內容；public repo 提供「在 GitHub 上
-   查看」連結，private repo 提供平台內建下載。
-6. **用 Claude 取用**：見 §9。
+1. **登入**：GitHub OAuth，任何帳號皆可。
+2. **瀏覽/搜尋**：Dashboard 列出可見 skill（公開 / 分享給我 / 我的），關鍵字搜尋。
+3. **連結 repo**：「我的 repo」→ GitHub App installation → 回平台 → 預設
+   `selected_only`、全部未發布，需自行設定。
+4. **設定分享**（repo 設定頁）：
+   - 切換 `share_mode`；`selected_only` 下逐 skill 開關發布。
+   - 公開開關：整個 repo 或單一 skill 設為平台公開。
+   - 分享對象：選自己的群組，或輸入 GitHub username 分享給個人；隨時可收回。
+5. **群組管理**（`/settings/groups`）：建立/刪除群組、加/移除成員。
+6. **檢視 skill**：渲染 SKILL.md；GitHub public repo 給原始連結，private 走平台下載。
+7. **用 Claude 取用**：見 §9。
 
 ---
 
 ## 8. 稽核與安全
 
-- 所有對 `skill_content_cache` 的讀取（網站與 API/MCP 皆同）都寫入 `access_audit_log`，
-  記錄誰在什麼時候看了/下載了哪個 skill，供事後排查外洩。
-- `api_tokens` 可隨時撤銷（`revoked_at`），token 只雜湊儲存、產生時一次性顯示明碼。
-- MCP / REST API 加合理 rate limit，避免 token 外洩後被大量爬取。
-- 權限判斷邏輯（§6.1）需要有對應的自動化測試（org 成員 / 非成員、被分享 / 未被分享、
-  team 成員 / 非 team 成員等情境）。
+- 所有內容讀取（網站與 API/MCP）寫入 `access_audit_log`。
+- `api_tokens` 可撤銷，只存雜湊，明碼一次性顯示。
+- REST API 全面 rate limit——**去 org 化後任何人都能註冊，rate limit 與
+  可見性判斷的正確性比 v1 更關鍵**。
+- 可見性邏輯（§6.1）必須有自動化測試：公開/私有、個人分享/群組分享、
+  群組成員/非成員、未發布即使被分享也不可見、擁有者永遠可見。
 
 ---
 
 ## 9. Claude 串接（Remote MCP Server）
 
-獨立輕量服務（可與主站共用 DB，獨立部署），用 `@modelcontextprotocol/sdk` 實作
-HTTP + SSE transport 的 remote MCP server，暴露三個工具：
+獨立輕量服務，用 `@modelcontextprotocol/sdk` 實作 Streamable HTTP 的
+remote MCP server，暴露三個工具（內部轉呼叫主站 REST API，可見性判斷
+完全交給主站）：
 
 ```
 search_skills(query: string)
-  -> [{ id, name, description, owner, source_type }]
+  -> [{ id, name, description, owner }]
 
 get_skill_details(id: string)
   -> { name, description, skill_md_content, file_list }
@@ -224,17 +226,19 @@ download_skill(id: string)
      // （owner-name slug）而非 name，避免互相覆蓋。
 ```
 
-**認證**：使用者在平台「設定」頁生成個人 API Token（對應 `api_tokens` 表），設定到 Claude Code：
+**認證**：使用者在 `/settings/tokens` 生成個人 API Token，設定到 Claude Code：
 
 ```bash
 claude mcp add --transport http skillhub https://your-domain/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
-- 每個 token 綁定 GitHub 使用者身份，`search_skills` / `download_skill` 內部一律套用 §6.1
-  的可見性判斷邏輯，跟網站行為完全一致，不會多看到東西。
-- 同一套邏輯也可包成一般 REST API（`GET /api/v1/skills/search`、`GET /api/v1/skills/{id}`、
-  `GET /api/v1/skills/{id}/download`），MCP server 內部直接呼叫這些 API，避免邏輯重複維護。
+- 每個 token 綁定使用者身份，API 一律套用 §6.1 的可見性判斷，跟網站行為一致。
+- REST API：`GET /api/v1/skills/search`、`GET /api/v1/skills/{id}`、
+  `GET /api/v1/skills/{id}/download`。
+
+另有兩個 bootstrap skill（`skills/skillsharing-find`、`skills/skillsharing-download`），
+讓 Claude 不經 MCP、直接用 curl 串上述 REST API——與 MCP server 互補。
 
 ---
 
@@ -244,18 +248,18 @@ claude mcp add --transport http skillhub https://your-domain/mcp \
 - **資料庫**：Postgres（Neon / Supabase 免費額度起步）
 - **Auth**：Auth.js（NextAuth）處理 GitHub OAuth 登入
 - **GitHub 整合**：Octokit（`@octokit/app` + `@octokit/webhooks`）
-- **MCP server**：`@modelcontextprotocol/sdk`，獨立部署，共用主站 DB 與權限邏輯（或直接呼叫主站 REST API）
-- **排程 job**：Vercel Cron 或 GitHub Actions schedule 呼叫 sync API（初期不需要 queue system）
-- **部署**：Vercel（前端 + API routes）+ Neon/Supabase（DB）
+- **MCP server**：`@modelcontextprotocol/sdk`，獨立部署，轉呼叫主站 REST API
+- **排程 job**：Vercel Cron 或任意排程器呼叫 `/api/cron/sync`
+- **部署**：Vercel 或自架 server（Next.js + MCP server 同機、反向代理分流）
 
 ---
 
-## 11. MVP 範圍
+## 11. 範圍（v2）
 
-1. GitHub OAuth 登入 + org member 檢查
-2. GitHub App 安裝於 org，自動掃描 org repo 內的 SKILL.md（來源一）
-3. Dashboard 列出 org 內所有已發布 skill
-4. 個人 repo 連結 + `share_mode` 設定 + 分享對象（個人/team）設定（來源二）
-5. Skill 詳細頁：渲染 SKILL.md、public repo 給 GitHub 連結、private repo 走平台代理下載
-6. 稽核 log 基本版
-7. Remote MCP server + REST API（`search_skills` / `get_skill_details` / `download_skill`）
+1. GitHub OAuth 登入（任何帳號）
+2. repo 連結 + `share_mode` + 逐 skill 發布開關
+3. 群組管理（建立/刪除/加人/移除）
+4. 分享設定：群組分享、個人分享（username）、平台公開開關（repo 與 skill 兩層級）
+5. Dashboard + Skill 詳細頁（markdown 渲染、平台代理下載）
+6. 稽核 log、API token、rate limit
+7. Remote MCP server + REST API + bootstrap skills
