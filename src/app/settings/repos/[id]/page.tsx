@@ -76,9 +76,23 @@ export default async function RepoSettingsPage({
     orderBy: { createdAt: "asc" },
   });
 
+  // 平台已知使用者(登入過或被分享/加群組過),給 username 輸入框做
+  // 原生 datalist 自動完成——仍可自由輸入清單外的 GitHub username。
+  const platformUsers = await prisma.user.findMany({
+    where: { NOT: { id: viewer.userId } },
+    select: { githubLogin: true },
+    orderBy: { githubLogin: "asc" },
+  });
+
   return (
     <main className="mx-auto w-full max-w-3xl p-8">
       <AppHeader githubLogin={viewer.githubLogin} />
+
+      <datalist id="platform-users">
+        {platformUsers.map((u) => (
+          <option key={u.githubLogin} value={u.githubLogin} />
+        ))}
+      </datalist>
 
       <div className="mb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{source.repoFullName}</h1>
@@ -381,8 +395,9 @@ function ShareForms({
           type="text"
           name="username"
           required
-          placeholder="GitHub username…"
-          className="w-40 rounded border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-700"
+          list="platform-users"
+          placeholder="GitHub username（可挑選）…"
+          className="w-44 rounded border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-700"
         />
         <button
           type="submit"

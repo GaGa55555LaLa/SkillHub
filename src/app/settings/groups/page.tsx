@@ -20,8 +20,21 @@ export default async function GroupsPage() {
     orderBy: { createdAt: "asc" },
   });
 
+  // 平台已知使用者,給 username 輸入框做原生 datalist 自動完成——
+  // 仍可自由輸入清單外的 GitHub username(見 repos/[id] 頁的同款作法)。
+  const platformUsers = await prisma.user.findMany({
+    where: { NOT: { id: viewer.userId } },
+    select: { githubLogin: true },
+    orderBy: { githubLogin: "asc" },
+  });
+
   return (
     <main className="mx-auto w-full max-w-3xl p-8">
+      <datalist id="platform-users">
+        {platformUsers.map((u) => (
+          <option key={u.githubLogin} value={u.githubLogin} />
+        ))}
+      </datalist>
       <AppHeader githubLogin={viewer.githubLogin} />
 
       <h1 className="mb-2 text-2xl font-bold">我的群組</h1>
@@ -99,7 +112,8 @@ export default async function GroupsPage() {
                   type="text"
                   name="username"
                   required
-                  placeholder="GitHub username…"
+                  list="platform-users"
+                  placeholder="GitHub username（可挑選）…"
                   className="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
                 />
                 <button
