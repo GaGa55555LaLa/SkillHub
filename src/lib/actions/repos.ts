@@ -182,6 +182,17 @@ export async function removeShare(sourceId: string, shareId: string) {
   revalidatePath(`/settings/repos/${sourceId}`);
 }
 
+/**
+ * 解除連結：刪掉 skill_source，cascade 一併清掉底下的 skills、內容快取、
+ * 分享設定與 audit log。GitHub 端的 App installation 不受影響，
+ * 之後可以重新連結（但分享設定不會回來）。
+ */
+export async function deleteSource(sourceId: string) {
+  const { source } = await requireSourceOwner(sourceId);
+  await prisma.skillSource.delete({ where: { id: source.id } });
+  revalidatePath("/settings/repos");
+}
+
 export async function resyncSource(sourceId: string) {
   const { source } = await requireSourceOwner(sourceId);
   await syncSource(source.id);
