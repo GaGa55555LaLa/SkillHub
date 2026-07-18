@@ -20,6 +20,29 @@ type ShareWithGrantee = {
   granteeGroup: { name: string } | null;
 };
 
+/** 狀態標籤（純顯示，不可點）——動作一律用旁邊帶邊框的按鈕。 */
+function StatusBadge({
+  tone,
+  children,
+}: {
+  tone: "amber" | "green" | "gray";
+  children: React.ReactNode;
+}) {
+  const tones = {
+    amber: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+    green: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+    gray: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300",
+  };
+  return (
+    <span className={`rounded-full px-3 py-1 text-xs ${tones[tone]}`}>
+      {children}
+    </span>
+  );
+}
+
+const ACTION_BTN_CLASS =
+  "rounded border border-gray-300 px-2 py-1 text-xs hover:border-gray-500 dark:border-gray-700 dark:hover:border-gray-500";
+
 export default async function RepoSettingsPage({
   params,
 }: {
@@ -111,24 +134,18 @@ export default async function RepoSettingsPage({
 
         <form
           action={toggleSourcePublic.bind(null, source.id)}
-          className="mb-3"
+          className="mb-3 flex items-center gap-2"
         >
           <input
             type="hidden"
             name="isPublic"
             value={(!source.isPublic).toString()}
           />
-          <button
-            type="submit"
-            className={`rounded-full px-3 py-1 text-xs ${
-              source.isPublic
-                ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
-                : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-            }`}
-          >
-            {source.isPublic
-              ? "已公開給平台所有人（點擊改回私有）"
-              : "未公開（點擊公開給平台所有人）"}
+          <StatusBadge tone={source.isPublic ? "amber" : "gray"}>
+            {source.isPublic ? "已公開給平台所有人" : "未公開"}
+          </StatusBadge>
+          <button type="submit" className={ACTION_BTN_CLASS}>
+            {source.isPublic ? "改回未公開" : "公開給平台所有人"}
           </button>
         </form>
         {source.isPublic && (
@@ -144,6 +161,11 @@ export default async function RepoSettingsPage({
       {/* skill 清單 + 逐一發布/公開 + 逐一分享 */}
       <section>
         <h2 className="mb-2 text-lg font-semibold">Skills</h2>
+        {source.isPublic && (
+          <p className="mb-3 text-sm text-amber-600 dark:text-amber-400">
+            這個 repo 已公開給平台所有人，以下已發布的 skill 都會跟著公開。
+          </p>
+        )}
         <ul className="space-y-4">
           {source.skills.map((skill) => (
             <li
@@ -159,47 +181,62 @@ export default async function RepoSettingsPage({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   {source.shareMode === "selected_only" && (
                     <form
                       action={toggleSkillPublished.bind(null, source.id, skill.id)}
+                      className="flex items-center gap-1"
                     >
                       <input
                         type="hidden"
                         name="isPublished"
                         value={(!skill.isPublished).toString()}
                       />
-                      <button
-                        type="submit"
-                        className={`rounded-full px-3 py-1 text-xs ${
-                          skill.isPublished
-                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                            : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                        }`}
-                      >
+                      <StatusBadge tone={skill.isPublished ? "green" : "gray"}>
                         {skill.isPublished ? "已發布" : "未發布"}
+                      </StatusBadge>
+                      <button type="submit" className={ACTION_BTN_CLASS}>
+                        {skill.isPublished ? "取消發布" : "發布"}
                       </button>
                     </form>
                   )}
-                  <form
-                    action={toggleSkillPublic.bind(null, source.id, skill.id)}
-                  >
-                    <input
-                      type="hidden"
-                      name="isPublic"
-                      value={(!skill.isPublic).toString()}
-                    />
-                    <button
-                      type="submit"
-                      className={`rounded-full px-3 py-1 text-xs ${
-                        skill.isPublic
-                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200"
-                          : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-                      }`}
-                    >
-                      {skill.isPublic ? "已公開" : "未公開"}
-                    </button>
-                  </form>
+                  {(() => {
+                    const published =
+                      source.shareMode === "whole_repo" || skill.isPublished;
+                    // 有效公開狀態 = 已發布 && (repo 公開 || skill 公開)——
+                    // 顯示要跟後端可見性規則(visibility.ts)一致,不能只看
+                    // skill 自己的 isPublic 欄位。
+                    if (!published) {
+                      return (
+                        <StatusBadge tone="gray">
+                          未公開（未發布的 skill 對其他人一律不可見）
+                        </StatusBadge>
+                      );
+                    }
+                    if (source.isPublic) {
+                      return (
+                        <StatusBadge tone="amber">已公開（隨 repo）</StatusBadge>
+                      );
+                    }
+                    return (
+                      <form
+                        action={toggleSkillPublic.bind(null, source.id, skill.id)}
+                        className="flex items-center gap-1"
+                      >
+                        <input
+                          type="hidden"
+                          name="isPublic"
+                          value={(!skill.isPublic).toString()}
+                        />
+                        <StatusBadge tone={skill.isPublic ? "amber" : "gray"}>
+                          {skill.isPublic ? "已公開" : "未公開"}
+                        </StatusBadge>
+                        <button type="submit" className={ACTION_BTN_CLASS}>
+                          {skill.isPublic ? "取消公開" : "公開"}
+                        </button>
+                      </form>
+                    );
+                  })()}
                 </div>
               </div>
               {skill.description && (
