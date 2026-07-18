@@ -140,23 +140,39 @@ export async function listSkillFiles(
 }
 
 /**
- * 用 GitHub username 查公開的使用者資訊（App 自身身份即可呼叫）。
- * 供群組加人、個人分享時把 username 解析成穩定的 githubId
- * （DESIGN.md §4）。查不到（帳號不存在）回傳 null。
+ * 用 GitHub username 查公開的使用者資訊。供群組加人、個人分享時把
+ * username 解析成穩定的 githubId（DESIGN.md §4）。
+ *
+ * 不能用 GitHub App 的 JWT 打這個端點——JWT 只被接受於 App 管理類
+ * API,打 /users 會 401。改用 OAuth App 憑證的 Basic auth(公開端點,
+ * 5000 req/hr)。帳號不存在回 null;其他錯誤(API 掛了、憑證問題)
+ * 直接 throw,讓呼叫端區分「找不到」與「查詢失敗」。
  */
 export async function getUserByLogin(
   username: string
 ): Promise<{ githubId: number; login: string; avatarUrl: string } | null> {
-  try {
-    const res = await getApp().octokit.request("GET /users/{username}", {
-      username,
-    });
-    return {
-      githubId: res.data.id,
-      login: res.data.login,
-      avatarUrl: res.data.avatar_url,
-    };
-  } catch {
-    return null;
+  const res = await fetch(
+    `https://api.github.com/users/${encodeURIComponent(username.trim())}`,
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "SkillHub",
+        Authorization:
+          "Basic " +
+          Buffer.from(
+            `${process.env.AUTH_GITHUB_ID}:${process.env.AUTH_GITHUB_SECRET}`
+          ).toString("base64"),
+      },
+    }
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`GitHub GET /users/${username}: ${res.status}`);
   }
+  const data = (await res.json()) as {
+    id: number;
+    login: string;
+    avatar_url: string;
+  };
+  return { githubId: data.id, login: data.login, avatarUrl: data.avatar_url };
 }

@@ -145,7 +145,13 @@ export async function addUserShare(
     return { error: "請輸入 username" };
   }
 
-  const user = await resolvePlatformUser(username);
+  let user;
+  try {
+    user = await resolvePlatformUser(username);
+  } catch (e) {
+    console.error(`[share] resolve failed for ${username.trim()}:`, e);
+    return { error: "查詢 GitHub 失敗，請稍後再試" };
+  }
   console.log(
     `[share] source=${source.repoFullName} skill=${skillId || "(repo)"} ` +
       `username=${username.trim()} resolved=${user?.githubLogin ?? "NOT_FOUND"}`

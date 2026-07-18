@@ -79,7 +79,13 @@ export async function addGroupMember(
     return { error: "請輸入 username" };
   }
 
-  const user = await resolvePlatformUser(username);
+  let user;
+  try {
+    user = await resolvePlatformUser(username);
+  } catch (e) {
+    console.error(`[group] resolve failed for ${username.trim()}:`, e);
+    return { error: "查詢 GitHub 失敗，請稍後再試" };
+  }
   console.log(
     `[group] group=${group.name} username=${username.trim()} ` +
       `resolved=${user?.githubLogin ?? "NOT_FOUND"}`
