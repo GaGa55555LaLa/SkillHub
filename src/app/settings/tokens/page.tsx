@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/viewer";
 import { revokeApiToken } from "@/lib/actions/tokens";
 import { CreateTokenForm } from "./CreateTokenForm";
+import { McpGuide } from "./McpGuide";
 import { AppHeader } from "@/components/AppHeader";
 
 export default async function TokensPage() {
@@ -78,6 +79,8 @@ export default async function TokensPage() {
           </tbody>
         </table>
       )}
+
+      <McpGuide />
     </main>
   );
 }

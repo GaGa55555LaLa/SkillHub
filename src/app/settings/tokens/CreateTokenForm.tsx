@@ -15,6 +15,7 @@ export function CreateTokenForm() {
     null
   );
   const [copied, setCopied] = useState(false);
+  const [cmdCopied, setCmdCopied] = useState(false);
 
   return (
     <div className="mb-8">
@@ -46,6 +47,26 @@ export function CreateTokenForm() {
               className="shrink-0 rounded border border-amber-400 px-2 py-1 text-xs hover:bg-amber-100 dark:hover:bg-amber-900"
             >
               {copied ? "已複製" : "複製"}
+            </button>
+          </div>
+          <p className="mb-2 mt-4 font-medium text-amber-800 dark:text-amber-200">
+            要在 Claude Code 用的話,直接複製這條指令(已帶入 token):
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 overflow-x-auto whitespace-pre rounded bg-white px-2 py-1 font-mono text-xs dark:bg-black">
+              {`claude mcp add --transport http skillhub ${window.location.origin}/mcp --header "Authorization: Bearer ${state.token}"`}
+            </code>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(
+                  `claude mcp add --transport http skillhub ${window.location.origin}/mcp --header "Authorization: Bearer ${state.token}"`
+                );
+                setCmdCopied(true);
+              }}
+              className="shrink-0 rounded border border-amber-400 px-2 py-1 text-xs hover:bg-amber-100 dark:hover:bg-amber-900"
+            >
+              {cmdCopied ? "已複製" : "複製"}
             </button>
           </div>
         </div>
