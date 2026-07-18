@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { zipSync, strToU8 } from "fflate";
 import { prisma } from "@/lib/prisma";
 import { resolveApiViewer } from "@/lib/api-auth";
 import { canViewSkill } from "@/lib/visibility";
@@ -7,7 +8,9 @@ import { slugify } from "@/lib/slug";
 
 /**
  * GET /api/v1/skills/:id/download — DESIGN.md §9 download_skill
- * 直接回傳檔案內容陣列（非 zip），方便 agent 寫入本地 .claude/skills/<dir>/。
+ * 預設回傳檔案內容陣列（非 zip），方便 agent 寫入本地 .claude/skills/<dir>/。
+ * 帶 ?format=zip 則回傳 zip 檔（Content-Disposition: attachment）——給
+ * 瀏覽器上的「下載」按鈕用，JSON 對瀏覽器來說不是真的下載。
  * 路徑會轉成相對於 skill 資料夾的相對路徑。
  *
  * `name` 只是從 SKILL.md frontmatter 解析出來的顯示字串，不保證唯一
@@ -47,15 +50,31 @@ export async function GET(
   const suggestedDirName = `${slugify(owner)}-${slugify(skill.name)}`;
 
   const prefix = skill.path === "" ? "" : `${skill.path}/`;
+  const files = skill.contentCache.map((f) => ({
+    path: f.filePath.startsWith(prefix)
+      ? f.filePath.slice(prefix.length)
+      : f.filePath,
+    content: f.fileContent,
+  }));
+
+  if (req.nextUrl.searchParams.get("format") === "zip") {
+    const zipped = zipSync(
+      Object.fromEntries(
+        files.map((f) => [`${suggestedDirName}/${f.path}`, strToU8(f.content)])
+      )
+    );
+    return new NextResponse(Buffer.from(zipped), {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${suggestedDirName}.zip"`,
+      },
+    });
+  }
+
   return NextResponse.json({
     name: skill.name,
     owner,
     suggested_dir_name: suggestedDirName,
-    files: skill.contentCache.map((f) => ({
-      path: f.filePath.startsWith(prefix)
-        ? f.filePath.slice(prefix.length)
-        : f.filePath,
-      content: f.fileContent,
-    })),
+    files,
   });
 }

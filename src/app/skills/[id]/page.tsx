@@ -71,8 +71,11 @@ export default async function SkillDetailPage({
             原始 repo 為私有，此內容由擁有者透過本平台分享
           </span>
         )}
-        <a href={`/api/v1/skills/${skill.id}/download`} className={BUTTON_LINK_CLASS}>
-          下載 skill
+        <a
+          href={`/api/v1/skills/${skill.id}/download?format=zip`}
+          className={BUTTON_LINK_CLASS}
+        >
+          下載 skill（zip）
         </a>
       </div>
 
