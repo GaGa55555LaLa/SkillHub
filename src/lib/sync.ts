@@ -30,7 +30,18 @@ export async function syncSource(sourceId: string) {
     source.repoFullName,
     repoInfo.data.default_branch
   );
-  if (source.lastCommitSha === headSha) return;
+  if (source.lastCommitSha === headSha) {
+    // 內容沒變也要同步 repo 的公開/私有狀態——在 GitHub 上切換 repo
+    // visibility 不會產生新 commit,不能被 sha diff 跳過。
+    await prisma.skillSource.update({
+      where: { id: source.id },
+      data: {
+        visibility: repoInfo.data.private ? "private" : "public",
+        lastSyncedAt: new Date(),
+      },
+    });
+    return;
+  }
 
   const skillDirs = await findSkillDirs(octokit, source.repoFullName, headSha);
   await prisma.skillSource.update({

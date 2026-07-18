@@ -46,11 +46,11 @@ export default async function TokensPage() {
                 className="border-t border-gray-200 dark:border-gray-800"
               >
                 <td className="py-2">
-                  {token.createdAt.toLocaleString("zh-TW")}
+                  {token.createdAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}
                 </td>
                 <td className="py-2">
                   {token.lastUsedAt
-                    ? token.lastUsedAt.toLocaleString("zh-TW")
+                    ? token.lastUsedAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })
                     : "尚未使用"}
                 </td>
                 <td className="py-2">

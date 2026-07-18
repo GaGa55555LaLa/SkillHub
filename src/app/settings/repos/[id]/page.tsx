@@ -68,7 +68,7 @@ export default async function RepoSettingsPage({
       <p className="mb-8 text-sm text-gray-500">
         {source.visibility === "private" ? "私有 repo" : "公開 repo"}
         {source.lastSyncedAt &&
-          `・上次掃描 ${source.lastSyncedAt.toLocaleString("zh-TW")}`}
+          `・上次掃描 ${source.lastSyncedAt.toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}`}
       </p>
 
       {/* share_mode 切換 */}
