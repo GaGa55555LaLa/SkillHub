@@ -218,6 +218,28 @@ export default async function RepoSettingsPage({
                         <StatusBadge tone="amber">已公開（隨 repo）</StatusBadge>
                       );
                     }
+                    // 整包分享模式:公開與否以 repo 層級為準,不提供逐一開關。
+                    // 唯一例外是先前在逐一挑選模式設過的單獨公開——後端仍會
+                    // 生效,所以要誠實顯示,並只給「取消」讓使用者清掉。
+                    if (source.shareMode === "whole_repo") {
+                      if (!skill.isPublic) {
+                        return <StatusBadge tone="gray">未公開</StatusBadge>;
+                      }
+                      return (
+                        <form
+                          action={toggleSkillPublic.bind(null, source.id, skill.id)}
+                          className="flex items-center gap-1"
+                        >
+                          <input type="hidden" name="isPublic" value="false" />
+                          <StatusBadge tone="amber">
+                            已公開（沿用先前的單獨設定）
+                          </StatusBadge>
+                          <button type="submit" className={ACTION_BTN_CLASS}>
+                            取消公開
+                          </button>
+                        </form>
+                      );
+                    }
                     return (
                       <form
                         action={toggleSkillPublic.bind(null, source.id, skill.id)}
@@ -245,18 +267,28 @@ export default async function RepoSettingsPage({
                 </p>
               )}
 
-              <div className="mt-3">
-                <p className="mb-1 text-xs font-medium text-gray-500">
-                  只分享此 skill 給：
-                </p>
-                <ShareList shares={skill.shares} sourceId={source.id} />
-                <ShareForms
-                  sourceId={source.id}
-                  skillId={skill.id}
-                  groups={myGroups}
-                  compact
-                />
-              </div>
+              {(source.shareMode === "selected_only" ||
+                skill.shares.length > 0) && (
+                <div className="mt-3">
+                  <p className="mb-1 text-xs font-medium text-gray-500">
+                    只分享此 skill 給：
+                  </p>
+                  <ShareList shares={skill.shares} sourceId={source.id} />
+                  {source.shareMode === "selected_only" ? (
+                    <ShareForms
+                      sourceId={source.id}
+                      skillId={skill.id}
+                      groups={myGroups}
+                      compact
+                    />
+                  ) : (
+                    <p className="text-xs text-gray-400">
+                      整包分享模式下，分享對象以 repo 層級為準；上面是先前逐一
+                      設定留下的分享（仍然有效），可按 × 移除。
+                    </p>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>
