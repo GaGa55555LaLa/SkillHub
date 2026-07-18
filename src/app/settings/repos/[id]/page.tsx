@@ -7,16 +7,17 @@ import {
   toggleSourcePublic,
   toggleSkillPublic,
   addGroupShare,
-  addUserShare,
   removeShare,
   resyncSource,
 } from "@/lib/actions/repos";
 import { AppHeader } from "@/components/AppHeader";
+import { UserShareForm } from "@/components/UserShareForm";
+import type { UserOption } from "@/components/UsernameField";
 import { BUTTON_LINK_CLASS } from "@/lib/ui";
 
 type ShareWithGrantee = {
   id: string;
-  granteeUser: { githubLogin: string } | null;
+  granteeUser: { githubLogin: string; githubAvatarUrl: string | null } | null;
   granteeGroup: { name: string } | null;
 };
 
@@ -76,23 +77,19 @@ export default async function RepoSettingsPage({
     orderBy: { createdAt: "asc" },
   });
 
-  // 平台已知使用者(登入過或被分享/加群組過),給 username 輸入框做
-  // 原生 datalist 自動完成——仍可自由輸入清單外的 GitHub username。
-  const platformUsers = await prisma.user.findMany({
-    where: { NOT: { id: viewer.userId } },
-    select: { githubLogin: true },
-    orderBy: { githubLogin: "asc" },
-  });
+  // 平台已知使用者(登入過或被分享/加群組過),給 username 輸入框的
+  // 建議下拉(含頭貼)——仍可自由輸入清單外的 GitHub username。
+  const platformUsers = (
+    await prisma.user.findMany({
+      where: { NOT: { id: viewer.userId } },
+      select: { githubLogin: true, githubAvatarUrl: true },
+      orderBy: { githubLogin: "asc" },
+    })
+  ).map((u) => ({ login: u.githubLogin, avatarUrl: u.githubAvatarUrl }));
 
   return (
     <main className="mx-auto w-full max-w-3xl p-8">
       <AppHeader githubLogin={viewer.githubLogin} />
-
-      <datalist id="platform-users">
-        {platformUsers.map((u) => (
-          <option key={u.githubLogin} value={u.githubLogin} />
-        ))}
-      </datalist>
 
       <div className="mb-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{source.repoFullName}</h1>
@@ -169,7 +166,11 @@ export default async function RepoSettingsPage({
         )}
 
         <ShareList shares={source.shares} sourceId={source.id} />
-        <ShareForms sourceId={source.id} groups={myGroups} />
+        <ShareForms
+          sourceId={source.id}
+          groups={myGroups}
+          users={platformUsers}
+        />
       </section>
 
       {/* skill 清單 + 逐一發布/公開 + 逐一分享 */}
@@ -293,6 +294,7 @@ export default async function RepoSettingsPage({
                       sourceId={source.id}
                       skillId={skill.id}
                       groups={myGroups}
+                      users={platformUsers}
                       compact
                     />
                   ) : (
@@ -328,6 +330,14 @@ function ShareList({
           key={share.id}
           className="flex items-center gap-2 rounded-full border border-gray-300 px-3 py-1 text-xs dark:border-gray-700"
         >
+          {share.granteeUser?.githubAvatarUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={share.granteeUser.githubAvatarUrl}
+              alt=""
+              className="h-4 w-4 rounded-full"
+            />
+          )}
           <span>
             {share.granteeGroup
               ? `群組: ${share.granteeGroup.name}`
@@ -352,11 +362,13 @@ function ShareForms({
   sourceId,
   skillId,
   groups,
+  users,
   compact,
 }: {
   sourceId: string;
   skillId?: string;
   groups: { id: string; name: string }[];
+  users: UserOption[];
   compact?: boolean;
 }) {
   const sizeClass = compact ? "text-xs" : "text-sm";
@@ -386,26 +398,7 @@ function ShareForms({
           </button>
         </form>
       )}
-      <form
-        action={addUserShare.bind(null, sourceId)}
-        className="flex items-center gap-2"
-      >
-        {skillId && <input type="hidden" name="skillId" value={skillId} />}
-        <input
-          type="text"
-          name="username"
-          required
-          list="platform-users"
-          placeholder="GitHub username（可挑選）…"
-          className="w-44 rounded border border-gray-300 bg-transparent px-2 py-1 dark:border-gray-700"
-        />
-        <button
-          type="submit"
-          className="rounded border border-gray-300 px-2 py-1 hover:border-gray-500 dark:border-gray-700"
-        >
-          分享給個人
-        </button>
-      </form>
+      <UserShareForm sourceId={sourceId} skillId={skillId} users={users} />
     </div>
   );
 }

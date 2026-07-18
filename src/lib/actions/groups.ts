@@ -64,19 +64,28 @@ export async function deleteGroup(groupId: string) {
   revalidatePath("/settings/groups");
 }
 
-export async function addGroupMember(groupId: string, formData: FormData) {
+/**
+ * 加群組成員。給 useActionState 用：成功回 null，失敗回 { error }。
+ */
+export async function addGroupMember(
+  groupId: string,
+  _prev: { error: string } | null,
+  formData: FormData
+): Promise<{ error: string } | null> {
   const { group } = await requireGroupOwner(groupId);
 
   const username = formData.get("username");
   if (typeof username !== "string" || !username.trim()) {
-    throw new Error("username required");
+    return { error: "請輸入 username" };
   }
 
   const user = await resolvePlatformUser(username);
+  console.log(
+    `[group] group=${group.name} username=${username.trim()} ` +
+      `resolved=${user?.githubLogin ?? "NOT_FOUND"}`
+  );
   if (!user) {
-    // GitHub 上不存在這個帳號；先靜默返回，頁面上成員清單不會出現即可看出沒加成
-    // TODO: 之後可以把錯誤帶回表單顯示
-    return;
+    return { error: `GitHub 上找不到帳號「${username.trim()}」` };
   }
 
   const existing = await prisma.groupMember.findUnique({
@@ -88,6 +97,7 @@ export async function addGroupMember(groupId: string, formData: FormData) {
     });
   }
   revalidatePath("/settings/groups");
+  return null;
 }
 
 export async function removeGroupMember(groupId: string, memberId: string) {

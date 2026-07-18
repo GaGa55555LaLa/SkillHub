@@ -128,21 +128,30 @@ export async function addGroupShare(sourceId: string, formData: FormData) {
   revalidatePath(`/settings/repos/${sourceId}`);
 }
 
-/** 分享給單一使用者（輸入 GitHub username 解析）。 */
-export async function addUserShare(sourceId: string, formData: FormData) {
+/**
+ * 分享給單一使用者（輸入 GitHub username 解析）。
+ * 給 useActionState 用：成功回 null，失敗回 { error }（顯示在表單旁）。
+ */
+export async function addUserShare(
+  sourceId: string,
+  _prev: { error: string } | null,
+  formData: FormData
+): Promise<{ error: string } | null> {
   const { viewer, source } = await requireSourceOwner(sourceId);
 
   const username = formData.get("username");
   const skillId = formData.get("skillId");
   if (typeof username !== "string" || !username.trim()) {
-    throw new Error("missing username");
+    return { error: "請輸入 username" };
   }
 
   const user = await resolvePlatformUser(username);
+  console.log(
+    `[share] source=${source.repoFullName} skill=${skillId || "(repo)"} ` +
+      `username=${username.trim()} resolved=${user?.githubLogin ?? "NOT_FOUND"}`
+  );
   if (!user) {
-    // GitHub 上不存在這個帳號
-    // TODO: 之後可以把錯誤帶回表單顯示
-    return;
+    return { error: `GitHub 上找不到帳號「${username.trim()}」` };
   }
 
   const resolvedSkillId =
@@ -169,8 +178,10 @@ export async function addUserShare(sourceId: string, formData: FormData) {
         grantedById: viewer.userId,
       },
     });
+    console.log(`[share] created: ${user.githubLogin} <- ${source.repoFullName}`);
   }
   revalidatePath(`/settings/repos/${sourceId}`);
+  return null;
 }
 
 export async function removeShare(sourceId: string, shareId: string) {

@@ -6,9 +6,9 @@ import { BUTTON_LINK_CLASS } from "@/lib/ui";
 import {
   createGroup,
   deleteGroup,
-  addGroupMember,
   removeGroupMember,
 } from "@/lib/actions/groups";
+import { GroupMemberForm } from "@/components/GroupMemberForm";
 
 export default async function GroupsPage() {
   const viewer = await getViewer();
@@ -20,21 +20,18 @@ export default async function GroupsPage() {
     orderBy: { createdAt: "asc" },
   });
 
-  // 平台已知使用者,給 username 輸入框做原生 datalist 自動完成——
+  // 平台已知使用者,給 username 輸入框的建議下拉(含頭貼)——
   // 仍可自由輸入清單外的 GitHub username(見 repos/[id] 頁的同款作法)。
-  const platformUsers = await prisma.user.findMany({
-    where: { NOT: { id: viewer.userId } },
-    select: { githubLogin: true },
-    orderBy: { githubLogin: "asc" },
-  });
+  const platformUsers = (
+    await prisma.user.findMany({
+      where: { NOT: { id: viewer.userId } },
+      select: { githubLogin: true, githubAvatarUrl: true },
+      orderBy: { githubLogin: "asc" },
+    })
+  ).map((u) => ({ login: u.githubLogin, avatarUrl: u.githubAvatarUrl }));
 
   return (
     <main className="mx-auto w-full max-w-3xl p-8">
-      <datalist id="platform-users">
-        {platformUsers.map((u) => (
-          <option key={u.githubLogin} value={u.githubLogin} />
-        ))}
-      </datalist>
       <AppHeader githubLogin={viewer.githubLogin} />
 
       <h1 className="mb-2 text-2xl font-bold">我的群組</h1>
@@ -87,6 +84,14 @@ export default async function GroupsPage() {
                       key={member.id}
                       className="flex items-center gap-2 rounded-full border border-gray-300 px-3 py-1 text-xs dark:border-gray-700"
                     >
+                      {member.user.githubAvatarUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={member.user.githubAvatarUrl}
+                          alt=""
+                          className="h-4 w-4 rounded-full"
+                        />
+                      )}
                       <span>{member.user.githubLogin}</span>
                       <form
                         action={removeGroupMember.bind(null, group.id, member.id)}
@@ -104,25 +109,7 @@ export default async function GroupsPage() {
                 </ul>
               )}
 
-              <form
-                action={addGroupMember.bind(null, group.id)}
-                className="flex items-center gap-2 text-sm"
-              >
-                <input
-                  type="text"
-                  name="username"
-                  required
-                  list="platform-users"
-                  placeholder="GitHub username（可挑選）…"
-                  className="rounded border border-gray-300 px-2 py-1 dark:border-gray-700 dark:bg-gray-900"
-                />
-                <button
-                  type="submit"
-                  className="rounded border border-gray-300 px-2 py-1 hover:border-gray-500 dark:border-gray-700"
-                >
-                  加入成員
-                </button>
-              </form>
+              <GroupMemberForm groupId={group.id} users={platformUsers} />
             </li>
           ))}
         </ul>
