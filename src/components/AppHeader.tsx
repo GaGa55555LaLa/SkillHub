@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BUTTON_LINK_CLASS } from "@/lib/ui";
+import { signOutAction } from "@/lib/actions/auth";
 
 export function AppHeader({ githubLogin }: { githubLogin: string }) {
   return (
@@ -18,6 +19,11 @@ export function AppHeader({ githubLogin }: { githubLogin: string }) {
           API Tokens
         </Link>
         <span className="text-gray-500">@{githubLogin}</span>
+        <form action={signOutAction}>
+          <button type="submit" className={BUTTON_LINK_CLASS}>
+            登出
+          </button>
+        </form>
       </div>
     </div>
   );
