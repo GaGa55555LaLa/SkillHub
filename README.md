@@ -61,9 +61,9 @@
 ## 使用流程
 
 1. GitHub 登入 → Dashboard 看得到：公開的 skill、分享給你（個人或群組）的 skill、你自己的。
-2. 「我的 repo」→ 連結 repo（GitHub App installation）→ 預設全部未發布。
-3. repo 設定頁：切換曝光模式、逐 skill 發布、公開開關（repo/skill 兩層級）、
-   分享給群組或輸入 GitHub username 分享給個人。
+2. 「我的 repo」→ 連結 repo（GitHub App installation）→ 預設全部未公開/未分享。
+3. repo 設定頁：切換曝光模式（whole_repo 整包 / selected_only 逐 skill），
+   公開開關、分享給群組或輸入 GitHub username 分享給個人。
 4. 「我的群組」→ 建群組、輸入 username 加成員（對方不需同意）。
 
 ## 排程 sync

@@ -59,13 +59,14 @@ App 的「Where can this GitHub App be installed?」必須設為 **Any account**
 
 ## 3. Skill 掃描機制
 
-連結 repo 時選擇 `share_mode`：
+連結 repo 時選擇 `share_mode`，決定看 repo 層級還是 skill 層級的
+公開/分享設定，兩者互斥（不疊加）：
 
-- **`whole_repo`**：掃描出的所有 skill 全部沿用該 repo 目前的分享/公開設定；
-  未來新增的 skill 資料夾自動繼承，不需要每次手動 re-share。
-- **`selected_only`**（連結時的預設）：使用者自行勾選要曝光哪幾個
-  （`skills.is_published`）。未勾選的 skill 完全不會出現在平台上。
-  未來新增的 skill 預設 `is_published = false`。
+- **`whole_repo`**：只看 repo 層級的公開/分享設定，cascade 到底下所有
+  skill；未來新增的 skill 資料夾自動繼承，不需要每次手動 re-share。
+- **`selected_only`**（連結時的預設）：只看每個 skill 自己的公開/分享
+  設定。新掃到的 skill 預設 `is_public = false`、無分享——本來就不會
+  曝光給任何人，不需要額外的「發布」開關再保護一次。
 
 掃描流程：
 1. 用該來源的 installation token 取 default branch 最新 commit sha，與上次記錄比對，
@@ -130,8 +131,8 @@ skills
   id
   source_id          -> skill_sources
   path, name, description, content_sha
-  is_published        boolean；selected_only 模式下新 skill 預設 false
   is_public           boolean, default false  -- 單一 skill 層級的平台公開
+                       （只在 share_mode = selected_only 時生效，見 §6.1）
 
 skill_content_cache
   id, skill_id -> skills, file_path, file_content, cached_at
@@ -163,17 +164,19 @@ access_audit_log
 
 ```
 可見 skill 清單 =
-  ( 已發布 且 (source.is_public 或 skill.is_public) )          -- 平台公開
+  ( share_mode = whole_repo 且 (source.is_public
+      或 source 層級 skill_shares 命中「目前使用者」或其所屬群組) )
   UNION
-  ( 已發布 且 skill_shares 命中「目前使用者」                    -- 個人分享
-    或「目前使用者所屬的任一群組」，
-    比對 skill 層級或其 source 層級的分享設定 )                  -- 群組分享
+  ( share_mode = selected_only 且 (skill.is_public
+      或 skill 層級 skill_shares 命中「目前使用者」或其所屬群組) )
   UNION
-  ( 目前使用者是該 source 的擁有者，無論是否發布/公開 )          -- 自己的
+  ( 目前使用者是該 source 的擁有者，無論公開/分享設定為何 )      -- 自己的
 ```
 
-硬規則：`is_published = false` 的 skill 對非擁有者一律不可見，
-即使被分享或來源設為公開。
+沒有「發布」這個中間狀態：連結 repo 後新掃到的 skill 預設不公開、
+不分享，本來就不會曝光給任何人。`share_mode` 決定看 repo 層級還是
+skill 層級的設定，兩者互斥——切換模式不會清掉另一邊的設定，只是
+暫時不生效，切回去會立即恢復。
 
 ---
 
@@ -182,10 +185,11 @@ access_audit_log
 1. **登入**：GitHub OAuth，任何帳號皆可。
 2. **瀏覽/搜尋**：Dashboard 列出可見 skill（公開 / 分享給我 / 我的），關鍵字搜尋。
 3. **連結 repo**：「我的 repo」→ GitHub App installation → 回平台 → 預設
-   `selected_only`、全部未發布，需自行設定。
+   `selected_only`、全部未公開/未分享，需自行設定。
 4. **設定分享**（repo 設定頁）：
-   - 切換 `share_mode`；`selected_only` 下逐 skill 開關發布。
-   - 公開開關：整個 repo 或單一 skill 設為平台公開。
+   - 切換 `share_mode`：`whole_repo` 只設定一次套用全部；`selected_only`
+     逐 skill 各自設定。
+   - 公開開關：`whole_repo` 設整個 repo；`selected_only` 設單一 skill。
    - 分享對象：選自己的群組，或輸入 GitHub username 分享給個人；隨時可收回。
 5. **群組管理**（`/settings/groups`）：建立/刪除群組、加/移除成員。
 6. **檢視 skill**：渲染 SKILL.md；GitHub public repo 給原始連結，private 走平台下載。
@@ -200,7 +204,7 @@ access_audit_log
 - REST API 全面 rate limit——**去 org 化後任何人都能註冊，rate limit 與
   可見性判斷的正確性比 v1 更關鍵**。
 - 可見性邏輯（§6.1）必須有自動化測試：公開/私有、個人分享/群組分享、
-  群組成員/非成員、未發布即使被分享也不可見、擁有者永遠可見。
+  群組成員/非成員、whole_repo 與 selected_only 互斥不疊加、擁有者永遠可見。
 
 ---
 
@@ -257,7 +261,7 @@ claude mcp add --transport http skillhub https://your-domain/mcp \
 ## 11. 範圍（v2）
 
 1. GitHub OAuth 登入（任何帳號）
-2. repo 連結 + `share_mode` + 逐 skill 發布開關
+2. repo 連結 + `share_mode`（whole_repo 整包 / selected_only 逐 skill）
 3. 群組管理（建立/刪除/加人/移除）
 4. 分享設定：群組分享、個人分享（username）、平台公開開關（repo 與 skill 兩層級）
 5. Dashboard + Skill 詳細頁（markdown 渲染、平台代理下載）

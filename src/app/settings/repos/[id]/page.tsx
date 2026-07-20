@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { getViewer } from "@/lib/viewer";
 import {
   updateShareMode,
-  toggleSkillPublished,
   toggleSourcePublic,
   toggleSkillPublic,
   addGroupShare,
@@ -119,7 +118,7 @@ export default async function RepoSettingsPage({
               value="whole_repo"
               defaultChecked={source.shareMode === "whole_repo"}
             />
-            整包分享 — repo 內所有 skill（含未來新增的）都套用同一組分享設定
+            整包分享 — 底下所有 skill（含未來新增的）共用這個 repo 的公開/分享設定
           </label>
           <label className="flex items-center gap-2">
             <input
@@ -128,7 +127,7 @@ export default async function RepoSettingsPage({
               value="selected_only"
               defaultChecked={source.shareMode === "selected_only"}
             />
-            逐一挑選 — 只有手動勾選「已發布」的 skill 才會曝光
+            逐一挑選 — 每個 skill 自己決定要不要公開、分享給誰
           </label>
           <button
             type="submit"
@@ -139,48 +138,49 @@ export default async function RepoSettingsPage({
         </form>
       </section>
 
-      {/* repo 層級：平台公開 + 分享對象 */}
-      <section className="mb-8">
-        <h2 className="mb-2 text-lg font-semibold">整個 repo 的分享設定</h2>
+      {/* repo 層級：只在整包分享模式下生效 */}
+      {source.shareMode === "whole_repo" ? (
+        <section className="mb-8">
+          <h2 className="mb-2 text-lg font-semibold">整個 repo 的分享設定</h2>
 
-        <form
-          action={toggleSourcePublic.bind(null, source.id)}
-          className="mb-3 flex items-center gap-2"
-        >
-          <input
-            type="hidden"
-            name="isPublic"
-            value={(!source.isPublic).toString()}
+          <form
+            action={toggleSourcePublic.bind(null, source.id)}
+            className="mb-3 flex items-center gap-2"
+          >
+            <input
+              type="hidden"
+              name="isPublic"
+              value={(!source.isPublic).toString()}
+            />
+            <StatusBadge tone={source.isPublic ? "amber" : "gray"}>
+              {source.isPublic ? "已公開給平台所有人" : "未公開"}
+            </StatusBadge>
+            <button type="submit" className={ACTION_BTN_CLASS}>
+              {source.isPublic ? "改回未公開" : "公開給平台所有人"}
+            </button>
+          </form>
+          {source.isPublic && (
+            <p className="mb-3 text-xs text-amber-600 dark:text-amber-400">
+              注意：任何人都能註冊本平台，公開實質等於全世界可見。
+            </p>
+          )}
+
+          <ShareList shares={source.shares} sourceId={source.id} />
+          <ShareForms
+            sourceId={source.id}
+            groups={myGroups}
+            users={platformUsers}
           />
-          <StatusBadge tone={source.isPublic ? "amber" : "gray"}>
-            {source.isPublic ? "已公開給平台所有人" : "未公開"}
-          </StatusBadge>
-          <button type="submit" className={ACTION_BTN_CLASS}>
-            {source.isPublic ? "改回未公開" : "公開給平台所有人"}
-          </button>
-        </form>
-        {source.isPublic && (
-          <p className="mb-3 text-xs text-amber-600 dark:text-amber-400">
-            注意：任何人都能註冊本平台，公開實質等於全世界可見。
-          </p>
-        )}
+        </section>
+      ) : (
+        <p className="mb-8 text-sm text-gray-400">
+          目前是逐一挑選模式，公開/分享改到下面每個 skill 自己設定。
+        </p>
+      )}
 
-        <ShareList shares={source.shares} sourceId={source.id} />
-        <ShareForms
-          sourceId={source.id}
-          groups={myGroups}
-          users={platformUsers}
-        />
-      </section>
-
-      {/* skill 清單 + 逐一發布/公開 + 逐一分享 */}
+      {/* skill 清單：整包模式下唯讀（設定在上面），逐一模式下才有個別控制項 */}
       <section>
         <h2 className="mb-2 text-lg font-semibold">Skills</h2>
-        {source.isPublic && (
-          <p className="mb-3 text-sm text-amber-600 dark:text-amber-400">
-            這個 repo 已公開給平台所有人，以下已發布的 skill 都會跟著公開。
-          </p>
-        )}
         <ul className="space-y-4">
           {source.skills.map((skill) => (
             <li
@@ -196,85 +196,28 @@ export default async function RepoSettingsPage({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-3">
-                  {source.shareMode === "selected_only" && (
-                    <form
-                      action={toggleSkillPublished.bind(null, source.id, skill.id)}
-                      className="flex items-center gap-1"
-                    >
-                      <input
-                        type="hidden"
-                        name="isPublished"
-                        value={(!skill.isPublished).toString()}
-                      />
-                      <StatusBadge tone={skill.isPublished ? "green" : "gray"}>
-                        {skill.isPublished ? "已發布" : "未發布"}
-                      </StatusBadge>
-                      <button type="submit" className={ACTION_BTN_CLASS}>
-                        {skill.isPublished ? "取消發布" : "發布"}
-                      </button>
-                    </form>
-                  )}
-                  {(() => {
-                    const published =
-                      source.shareMode === "whole_repo" || skill.isPublished;
-                    // 有效公開狀態 = 已發布 && (repo 公開 || skill 公開)——
-                    // 顯示要跟後端可見性規則(visibility.ts)一致,不能只看
-                    // skill 自己的 isPublic 欄位。
-                    if (!published) {
-                      return (
-                        <StatusBadge tone="gray">
-                          未公開（未發布的 skill 對其他人一律不可見）
-                        </StatusBadge>
-                      );
-                    }
-                    if (source.isPublic) {
-                      return (
-                        <StatusBadge tone="amber">已公開（隨 repo）</StatusBadge>
-                      );
-                    }
-                    // 整包分享模式:公開與否以 repo 層級為準,不提供逐一開關。
-                    // 唯一例外是先前在逐一挑選模式設過的單獨公開——後端仍會
-                    // 生效,所以要誠實顯示,並只給「取消」讓使用者清掉。
-                    if (source.shareMode === "whole_repo") {
-                      if (!skill.isPublic) {
-                        return <StatusBadge tone="gray">未公開</StatusBadge>;
-                      }
-                      return (
-                        <form
-                          action={toggleSkillPublic.bind(null, source.id, skill.id)}
-                          className="flex items-center gap-1"
-                        >
-                          <input type="hidden" name="isPublic" value="false" />
-                          <StatusBadge tone="amber">
-                            已公開（沿用先前的單獨設定）
-                          </StatusBadge>
-                          <button type="submit" className={ACTION_BTN_CLASS}>
-                            取消公開
-                          </button>
-                        </form>
-                      );
-                    }
-                    return (
-                      <form
-                        action={toggleSkillPublic.bind(null, source.id, skill.id)}
-                        className="flex items-center gap-1"
-                      >
-                        <input
-                          type="hidden"
-                          name="isPublic"
-                          value={(!skill.isPublic).toString()}
-                        />
-                        <StatusBadge tone={skill.isPublic ? "amber" : "gray"}>
-                          {skill.isPublic ? "已公開" : "未公開"}
-                        </StatusBadge>
-                        <button type="submit" className={ACTION_BTN_CLASS}>
-                          {skill.isPublic ? "取消公開" : "公開"}
-                        </button>
-                      </form>
-                    );
-                  })()}
-                </div>
+                {source.shareMode === "whole_repo" ? (
+                  <StatusBadge tone={source.isPublic ? "amber" : "gray"}>
+                    {source.isPublic ? "已公開（隨 repo）" : "私有（隨 repo）"}
+                  </StatusBadge>
+                ) : (
+                  <form
+                    action={toggleSkillPublic.bind(null, source.id, skill.id)}
+                    className="flex items-center gap-1"
+                  >
+                    <input
+                      type="hidden"
+                      name="isPublic"
+                      value={(!skill.isPublic).toString()}
+                    />
+                    <StatusBadge tone={skill.isPublic ? "amber" : "gray"}>
+                      {skill.isPublic ? "已公開" : "未公開"}
+                    </StatusBadge>
+                    <button type="submit" className={ACTION_BTN_CLASS}>
+                      {skill.isPublic ? "取消公開" : "公開"}
+                    </button>
+                  </form>
+                )}
               </div>
               {skill.description && (
                 <p className="mt-1 text-sm text-gray-500">
@@ -282,27 +225,19 @@ export default async function RepoSettingsPage({
                 </p>
               )}
 
-              {(source.shareMode === "selected_only" ||
-                skill.shares.length > 0) && (
+              {source.shareMode === "selected_only" && (
                 <div className="mt-3">
                   <p className="mb-1 text-xs font-medium text-gray-500">
                     只分享此 skill 給：
                   </p>
                   <ShareList shares={skill.shares} sourceId={source.id} />
-                  {source.shareMode === "selected_only" ? (
-                    <ShareForms
-                      sourceId={source.id}
-                      skillId={skill.id}
-                      groups={myGroups}
-                      users={platformUsers}
-                      compact
-                    />
-                  ) : (
-                    <p className="text-xs text-gray-400">
-                      整包分享模式下，分享對象以 repo 層級為準；上面是先前逐一
-                      設定留下的分享（仍然有效），可按 × 移除。
-                    </p>
-                  )}
+                  <ShareForms
+                    sourceId={source.id}
+                    skillId={skill.id}
+                    groups={myGroups}
+                    users={platformUsers}
+                    compact
+                  />
                 </div>
               )}
             </li>

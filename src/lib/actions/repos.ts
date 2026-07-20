@@ -19,7 +19,11 @@ async function requireSourceOwner(sourceId: string) {
   return { viewer, source };
 }
 
-/** DESIGN.md §3：切換 whole_repo / selected_only。 */
+/**
+ * 切換 whole_repo / selected_only。whole_repo：repo 層級的公開/分享
+ * cascade 到底下所有 skill；selected_only：只看每個 skill 各自的設定
+ * （見 visibility.ts）。沒有「發布」這個中間狀態要處理。
+ */
 export async function updateShareMode(sourceId: string, formData: FormData) {
   await requireSourceOwner(sourceId);
   const shareMode = formData.get("shareMode");
@@ -29,31 +33,6 @@ export async function updateShareMode(sourceId: string, formData: FormData) {
   await prisma.skillSource.update({
     where: { id: sourceId },
     data: { shareMode },
-  });
-
-  // 切成 whole_repo 代表「repo 內所有 skill 都套用同一組分享設定」，
-  // 已存在但還沒發布的 skill 也要一起變成已發布，不能只影響未來新增的。
-  if (shareMode === "whole_repo") {
-    await prisma.skill.updateMany({
-      where: { sourceId, isPublished: false },
-      data: { isPublished: true },
-    });
-  }
-
-  revalidatePath(`/settings/repos/${sourceId}`);
-}
-
-/** selected_only 模式下，逐 skill 開關是否曝光。 */
-export async function toggleSkillPublished(
-  sourceId: string,
-  skillId: string,
-  formData: FormData
-) {
-  const { source } = await requireSourceOwner(sourceId);
-  const isPublished = formData.get("isPublished") === "true";
-  await prisma.skill.update({
-    where: { id: skillId, sourceId: source.id },
-    data: { isPublished },
   });
   revalidatePath(`/settings/repos/${sourceId}`);
 }

@@ -56,7 +56,12 @@ export default async function MyReposPage() {
                 <span className="font-semibold">{source.repoFullName}</span>
                 <p className="mt-1 text-sm text-gray-500">
                   {source.skills.length} 個 skill・
-                  {source.skills.filter((s) => s.isPublished).length} 個已發布
+                  {source.shareMode === "whole_repo"
+                    ? source.isPublic
+                      ? source.skills.length
+                      : 0
+                    : source.skills.filter((s) => s.isPublic).length}{" "}
+                  個已公開
                 </p>
               </Link>
               <div className="flex flex-col items-end gap-2">

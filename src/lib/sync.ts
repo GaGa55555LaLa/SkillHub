@@ -10,8 +10,8 @@ import {
 
 /**
  * DESIGN.md §3（v2）：同步單一來源（使用者連結的 repo）。
- * 用 head commit sha 做 diff，沒變動就跳過；share_mode = selected_only
- * 時，新發現的 skill 預設 is_published = false。
+ * 用 head commit sha 做 diff，沒變動就跳過；新掃到的 skill 預設
+ * isPublic = false、無分享，本來就不會曝光給任何人（見 visibility.ts）。
  * （v1 的 org 全量掃描 syncOrgInstallation 已移除——來源只剩使用者
  * 連結的 repo 一種。）
  */
@@ -53,8 +53,6 @@ export async function syncSource(sourceId: string) {
     },
   });
 
-  const defaultPublished = source.shareMode === "whole_repo";
-
   for (const dir of skillDirs) {
     const skillMdPath = dir === "" ? "SKILL.md" : `${dir}/SKILL.md`;
     const raw = await getFileContent(octokit, source.repoFullName, skillMdPath, headSha);
@@ -74,7 +72,6 @@ export async function syncSource(sourceId: string) {
         name,
         description,
         contentSha: headSha,
-        isPublished: defaultPublished,
       },
     });
 

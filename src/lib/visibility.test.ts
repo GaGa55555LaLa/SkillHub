@@ -8,8 +8,8 @@ import type { Viewer } from "@/lib/viewer";
  * 整合測試：直接打真實的 Postgres（沒有另外配獨立測試庫），所有 fixture
  * 都用不會跟真實資料衝突的 githubId / repoFullName，並在 afterAll 清乾淨。
  * DESIGN.md §8（v2）要求的情境：公開/私有、個人分享/群組分享、
- * 群組成員/非成員、「未發布即使被分享或公開也不可見」的硬規則、
- * 擁有者永遠可見。
+ * 群組成員/非成員、whole_repo 與 selected_only 兩種模式互斥（repo
+ * 層級與 skill 層級設定不疊加）、擁有者永遠可見。
  */
 
 const TEST_TAG = "__vitest_visibility__";
@@ -23,18 +23,21 @@ let otherGroup: { id: string };
 
 let publicSource: { id: string };
 let publicSourceSkill: { id: string };
-let publicSourceUnpublishedSkill: { id: string };
 
 let privateSource: { id: string };
 let publicSkill: { id: string };
 let noShareSkill: { id: string };
 let userSharedSkill: { id: string };
 let groupSharedSkill: { id: string };
-let unpublishedSharedSkill: { id: string };
 
 let repoShareSource: { id: string };
 let repoSharedSkillA: { id: string };
 let repoSharedSkillB: { id: string };
+
+// whole_repo 模式：驗證 repo 層級設定 cascade、skill 自己的設定不生效
+let wholeRepoSource: { id: string };
+let wholeRepoSkillWithOwnPublic: { id: string };
+let wholeRepoSkillPlain: { id: string };
 
 const createdSourceIds: string[] = [];
 const createdUserIds: string[] = [];
@@ -81,31 +84,25 @@ beforeAll(async () => {
     data: { groupId: group.id, userId: granteeUser.id },
   });
 
-  // 公開 source：已發布 skill 全平台可見；未發布 skill 即使 source 公開也不可見
+  // 公開 source（selected_only 模式，預設）：skill 自己公開才可見
   publicSource = await makeSource("public-source", { isPublic: true });
   publicSourceSkill = await prisma.skill.create({
-    data: { sourceId: publicSource.id, path: "a", name: "public-source-skill", isPublished: true },
-  });
-  publicSourceUnpublishedSkill = await prisma.skill.create({
-    data: { sourceId: publicSource.id, path: "b", name: "public-source-unpublished", isPublished: false },
+    data: { sourceId: publicSource.id, path: "a", name: "public-source-skill", isPublic: true },
   });
 
-  // 私有 source：混合各種 skill 情境
+  // 私有 source（selected_only）：混合各種 skill 情境
   privateSource = await makeSource("private-source");
   publicSkill = await prisma.skill.create({
-    data: { sourceId: privateSource.id, path: "public", name: "public-skill", isPublished: true, isPublic: true },
+    data: { sourceId: privateSource.id, path: "public", name: "public-skill", isPublic: true },
   });
   noShareSkill = await prisma.skill.create({
-    data: { sourceId: privateSource.id, path: "noshare", name: "no-share", isPublished: true },
+    data: { sourceId: privateSource.id, path: "noshare", name: "no-share" },
   });
   userSharedSkill = await prisma.skill.create({
-    data: { sourceId: privateSource.id, path: "usershared", name: "user-shared", isPublished: true },
+    data: { sourceId: privateSource.id, path: "usershared", name: "user-shared" },
   });
   groupSharedSkill = await prisma.skill.create({
-    data: { sourceId: privateSource.id, path: "groupshared", name: "group-shared", isPublished: true },
-  });
-  unpublishedSharedSkill = await prisma.skill.create({
-    data: { sourceId: privateSource.id, path: "unpubshared", name: "unpublished-shared", isPublished: false },
+    data: { sourceId: privateSource.id, path: "groupshared", name: "group-shared" },
   });
 
   await prisma.skillShare.create({
@@ -124,22 +121,14 @@ beforeAll(async () => {
       grantedById: ownerUser.id,
     },
   });
-  await prisma.skillShare.create({
-    data: {
-      skillId: unpublishedSharedSkill.id,
-      sourceId: privateSource.id,
-      granteeUserId: granteeUser.id,
-      grantedById: ownerUser.id,
-    },
-  });
 
-  // source 層級分享（skillId = null）：底下所有已發布 skill 對 grantee 可見
-  repoShareSource = await makeSource("repo-share");
+  // source 層級分享（skillId = null，whole_repo 模式）：底下所有 skill 對 grantee 可見
+  repoShareSource = await makeSource("repo-share", { shareMode: "whole_repo" });
   repoSharedSkillA = await prisma.skill.create({
-    data: { sourceId: repoShareSource.id, path: "a", name: "repo-share-a", isPublished: true },
+    data: { sourceId: repoShareSource.id, path: "a", name: "repo-share-a" },
   });
   repoSharedSkillB = await prisma.skill.create({
-    data: { sourceId: repoShareSource.id, path: "b", name: "repo-share-b", isPublished: true },
+    data: { sourceId: repoShareSource.id, path: "b", name: "repo-share-b" },
   });
   await prisma.skillShare.create({
     data: {
@@ -148,6 +137,23 @@ beforeAll(async () => {
       granteeUserId: granteeUser.id,
       grantedById: ownerUser.id,
     },
+  });
+
+  // whole_repo 模式 + repo 公開：skill 自己的設定不該生效（互斥，不疊加）
+  wholeRepoSource = await makeSource("whole-repo", {
+    shareMode: "whole_repo",
+    isPublic: true,
+  });
+  wholeRepoSkillWithOwnPublic = await prisma.skill.create({
+    data: {
+      sourceId: wholeRepoSource.id,
+      path: "a",
+      name: "whole-repo-skill-own-public-irrelevant",
+      isPublic: false, // repo 公開就該可見，即使自己這欄是 false
+    },
+  });
+  wholeRepoSkillPlain = await prisma.skill.create({
+    data: { sourceId: wholeRepoSource.id, path: "b", name: "whole-repo-skill-plain" },
   });
 });
 
@@ -163,16 +169,9 @@ function viewerFor(user: { id: string; githubId: bigint }, groupIds: string[] = 
   return { userId: user.id, githubId: user.githubId, githubLogin: "test", groupIds };
 }
 
-describe("visibility (v2)", () => {
-  it("公開 source 的已發布 skill 對任何登入使用者可見", async () => {
+describe("visibility (v2, 無發布狀態)", () => {
+  it("公開的 skill 對任何登入使用者可見", async () => {
     expect(await canViewSkill(publicSourceSkill.id, viewerFor(strangerUser))).toBe(true);
-  });
-
-  it("公開 source 的未發布 skill 對非擁有者不可見", async () => {
-    expect(await canViewSkill(publicSourceUnpublishedSkill.id, viewerFor(strangerUser))).toBe(false);
-  });
-
-  it("單一 skill 設公開（source 未公開）對任何登入使用者可見", async () => {
     expect(await canViewSkill(publicSkill.id, viewerFor(strangerUser))).toBe(true);
   });
 
@@ -195,36 +194,35 @@ describe("visibility (v2)", () => {
     expect(await canViewSkill(groupSharedSkill.id, viewerFor(strangerUser, []))).toBe(false);
   });
 
-  it("source 層級分享：底下所有已發布 skill 都對被分享者可見", async () => {
+  it("whole_repo 模式：source 層級分享 cascade 到底下所有 skill", async () => {
     expect(await canViewSkill(repoSharedSkillA.id, viewerFor(granteeUser))).toBe(true);
     expect(await canViewSkill(repoSharedSkillB.id, viewerFor(granteeUser))).toBe(true);
   });
 
-  it("source 層級分享：沒被分享到的人不可見", async () => {
+  it("whole_repo 模式：沒被分享到的人不可見", async () => {
     expect(await canViewSkill(repoSharedSkillA.id, viewerFor(strangerUser))).toBe(false);
   });
 
-  it("未發布的 skill 即使被分享也不可見（硬規則）", async () => {
-    expect(await canViewSkill(unpublishedSharedSkill.id, viewerFor(granteeUser))).toBe(false);
+  it("whole_repo 模式：repo 公開 cascade 到所有 skill，與 skill 自己的欄位無關", async () => {
+    expect(await canViewSkill(wholeRepoSkillWithOwnPublic.id, viewerFor(strangerUser))).toBe(true);
+    expect(await canViewSkill(wholeRepoSkillPlain.id, viewerFor(strangerUser))).toBe(true);
   });
 
-  it("擁有者永遠看得到自己的 skill，即使未發布、未分享", async () => {
-    expect(await canViewSkill(publicSourceUnpublishedSkill.id, viewerFor(ownerUser))).toBe(true);
-    expect(await canViewSkill(unpublishedSharedSkill.id, viewerFor(ownerUser))).toBe(true);
+  it("擁有者永遠看得到自己的 skill，即使私有、未分享", async () => {
     expect(await canViewSkill(noShareSkill.id, viewerFor(ownerUser))).toBe(true);
   });
 
   it("visibleSkillsWhere 撈出的清單跟 canViewSkill 逐一檢查的結果一致", async () => {
     const allTestSkillIds = [
       publicSourceSkill.id,
-      publicSourceUnpublishedSkill.id,
       publicSkill.id,
       noShareSkill.id,
       userSharedSkill.id,
       groupSharedSkill.id,
-      unpublishedSharedSkill.id,
       repoSharedSkillA.id,
       repoSharedSkillB.id,
+      wholeRepoSkillWithOwnPublic.id,
+      wholeRepoSkillPlain.id,
     ];
 
     for (const viewer of [
