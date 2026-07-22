@@ -32,6 +32,21 @@ export default async function DashboardPage({
     orderBy: { updatedAt: "desc" },
   });
 
+  // 下載次數：MCP 的 download_skill 與網頁「下載」按鈕都走同一支
+  // /api/v1/skills/:id/download，都寫入 access_audit_log(action=download)，
+  // 所以這裡直接數 audit log 就同時涵蓋兩種來源。
+  const downloadCounts = await prisma.accessAuditLog.groupBy({
+    by: ["skillId"],
+    where: {
+      action: "download",
+      skillId: { in: skills.map((s) => s.id) },
+    },
+    _count: { skillId: true },
+  });
+  const downloadCountBySkill = new Map(
+    downloadCounts.map((row) => [row.skillId, row._count.skillId])
+  );
+
   return (
     <main className="mx-auto w-full max-w-4xl p-8">
       <AppHeader githubLogin={viewer.githubLogin} />
@@ -74,6 +89,9 @@ export default async function DashboardPage({
                     {skill.description}
                   </p>
                 )}
+                <p className="mt-2 text-xs text-gray-400">
+                  ↓ {downloadCountBySkill.get(skill.id) ?? 0} 次下載
+                </p>
               </Link>
             </li>
           ))}
